@@ -1,69 +1,39 @@
-# HoneyTrace AI — Person 1 Handoff
+# HoneyTrace AI
 
-## 1. My role
+HoneyTrace AI is a cybersecurity project that collects, normalizes, and stores security events from controlled honeypot and web-application environments. The goal is to provide a consistent dataset for later detection, correlation, and dashboard development.
 
-I am Person 1, responsible for collecting security logs from Cowrie and OWASP Juice Shop, normalizing the events into a shared schema, and storing them in PostgreSQL for the rest of the HoneyTrace AI team.
+## Project Status
 
-## 2. Project environment
+The initial data collection and storage pipeline is implemented and tested.
 
-- **Operating system:** Windows, using PowerShell and VS Code
-- **Python:** 3.14.0
-- **Environment:** Python virtual environment (`.venv`)
-- **Container platform:** Docker Desktop
-- **Database:** PostgreSQL 17.11 running in Docker
-- **Database name:** `honeytrace`
-- **Database user:** `hive`
-- **Database port:** `5433` on localhost
-- **Honeypot:** Cowrie Docker image downloaded successfully
+- Cowrie SSH honeypot event collection
+- OWASP Juice Shop HTTP access logging through Nginx
+- Shared event normalization
+- Sensitive-field redaction
+- PostgreSQL persistence
+- Duplicate-event handling
+- Quarantine records for invalid input
+- Automated tests for normalization and Juice Shop collection
 
-## 3. Work completed
+**Current verification:** 8 automated tests pass. The latest database verification showed 10 Cowrie events and 80 Juice Shop events.
 
-### Python environment
+## Architecture
 
-- Created the project directory and initial folder structure.
-- Created and activated `.venv`.
-- Installed the project dependencies:
-  - `psycopg[binary]`
-  - `python-dotenv`
-  - `pytest`
-- Verified that the Python dependencies import successfully.
+1. **Cowrie:** produces SSH/Telnet honeypot events in JSON Lines format.
+2. **OWASP Juice Shop:** provides the local web-application test environment.
+3. **Nginx:** records HTTP access events in JSON Lines format.
+4. **Collectors:** read source logs, validate events, and call the normalizer.
+5. **Normalizer:** maps events into a shared schema and redacts sensitive fields.
+6. **PostgreSQL:** stores normalized events for later querying and analysis.
+7. **Future integration:** detection logic and an API/dashboard can consume the shared event schema.
 
-### PostgreSQL setup
-
-- Reused the existing PostgreSQL Docker container named `projet-cyber-postgres-1`.
-- Started the container and verified that port `5433` is reachable locally.
-- Created the `honeytrace` database without creating a duplicate PostgreSQL server.
-- Created `src/storage/test_connection.py`.
-- Successfully connected from Python to the `honeytrace` database.
-- Created `sql/001_create_security_events.sql`.
-- Applied the SQL schema and verified that the `security_events` table and its indexes exist.
-
-### Database event schema
-
-The shared table includes:
-
-- Event ID and source
-- Original source event ID
-- Event timestamp and collection timestamp
-- Event type and session ID
-- Scenario ID and test-run ID
-- Source IP and protocol
-- Username and command
-- HTTP method, route and status code
-- Message, metadata and raw event JSON
-
-The table supports events from both Cowrie and Juice Shop. Optional fields can remain `NULL` when a source does not provide the information.
-
-### Cowrie setup
-
-- Downloaded the official `cowrie/cowrie:latest` Docker image.
-- Attempted to inspect the image using `sh`, but the image did not provide that executable in its PATH.
-- Cowrie has **not yet been started or tested**, and its log path still needs to be verified.
-
-## 4. Current project structure
+## Project Structure
 
 ```text
 honeytrace-ai/
+├── config/
+│   └── nginx/
+│       └── default.conf
 ├── data/
 │   ├── raw/
 │   │   ├── cowrie/
@@ -80,52 +50,134 @@ honeytrace-ai/
 │   │   └── normalize.py
 │   └── storage/
 │       ├── postgres.py
-│       └── test_connection.py
+│       └── check_connection.py
 ├── sql/
 │   └── 001_create_security_events.sql
 ├── tests/
+│   ├── test_cowrie_collector.py
+│   ├── test_juice_shop_collector.py
+│   └── test_normalize.py
 ├── docs/
+│   └── event-schema.md
 ├── .env.example
 ├── .gitignore
 ├── requirements.txt
 └── README.md
 ```
 
-Some listed files and folders may still be empty or need verification.
+## Requirements
 
-## 5. Remaining tasks for Person 1
+- Python and a virtual environment
+- Docker Desktop
+- PostgreSQL
+- Cowrie and OWASP Juice Shop containers
+- Nginx proxy for Juice Shop access logging
 
-1. Start Cowrie with its service port bound only to `127.0.0.1`.
-2. Verify the actual Cowrie JSON log location.
-3. Implement `cowrie_collector.py` to read Cowrie events.
-4. Implement and test event normalization.
-5. Implement PostgreSQL insertion with parameterized queries and duplicate-event handling.
-6. Implement `juice_shop_collector.py` after verifying the application's actual log format.
-7. Add sanitized test fixtures and unit tests.
-8. Quarantine malformed events with an error reason instead of silently discarding them.
-9. Redact passwords, tokens, cookies and other secrets before storing events.
-10. Document the schema and ingestion instructions for teammates.
-11. Test end-to-end ingestion and share the schema with Persons 2 and 3.
+## Python Setup
 
-## 6. Team integration
+From the project root, activate the virtual environment in PowerShell:
 
-- **Person 1:** Collect, normalize and store source events.
-- **Person 2:** Develop detection logic and machine-learning features using normalized events.
-- **Person 3:** Build the API and dashboard.
+```powershell
+.\.venv\Scripts\Activate.ps1
+```
 
-The team should use `scenario_id` and `test_run_id` for controlled test correlation. Source session IDs are not necessarily shared between Cowrie and Juice Shop, and an IP address alone is not proof that two events belong to the same activity.
+Install dependencies:
 
-## 7. Security and repository rules
+```powershell
+python -m pip install -r requirements.txt
+```
 
-- Never commit `.env`, passwords, tokens or other secrets.
-- Keep raw logs and quarantined records out of Git unless a specific, sanitized fixture is intentionally selected.
-- Commit sanitized fixtures for reproducible tests.
-- Keep honeypot services restricted to localhost during development.
-- Use parameterized SQL queries.
-- Do not claim that collectors or end-to-end ingestion work until they have been implemented and tested.
+Configure the database connection in a local `.env` file using the variable documented in `.env.example`. Do not commit `.env` or real credentials.
 
-## 8. Current status
+The PostgreSQL database and the `security_events` table must be available before importing events. The schema is defined in `sql/001_create_security_events.sql`.
 
-**Completed:** Python environment, PostgreSQL connectivity, database creation, event table creation, and Cowrie image download.
+## Running the Collectors
 
-**In progress:** Cowrie deployment, log discovery, collectors, normalization, storage integration, and automated tests.
+### Cowrie
+
+Run a dry run to validate and normalize the current log without inserting records:
+
+```powershell
+python -m src.collectors.cowrie_collector --dry-run
+```
+
+Import events into PostgreSQL:
+
+```powershell
+python -m src.collectors.cowrie_collector
+```
+
+### Juice Shop
+
+Use the local Nginx proxy at `http://127.0.0.1:3001` to generate requests that should be logged. Direct access to the application on port 3000 bypasses the proxy logger.
+
+Validate and normalize the access log:
+
+```powershell
+python -m src.collectors.juice_shop_collector --dry-run
+```
+
+Import events into PostgreSQL:
+
+```powershell
+python -m src.collectors.juice_shop_collector
+```
+
+The collectors report inserted events, duplicate events skipped, and quarantined records.
+
+## Running Tests
+
+Run the full test suite:
+
+```powershell
+python -m pytest tests/ -q
+```
+
+The current suite contains eight passing tests covering normalization and Juice Shop collector behavior, including valid input and malformed JSON.
+
+## Event Storage
+
+Normalized events are stored in the PostgreSQL `security_events` table.
+
+Important fields include:
+
+- `event_id`: stable SHA-256 identifier used to deduplicate events
+- `source`: event source, such as `cowrie` or `juice_shop`
+- `event_timestamp`: source event timestamp with timezone
+- `event_type`: type of event
+- `session_id`: source session identifier when available
+- `scenario_id` and `test_run_id`: optional identifiers for controlled test correlation
+- `src_ip`, `protocol`, `username`, and `command`: source-specific details when available
+- `http_method`, `route`, and `status_code`: HTTP request details when available
+- `metadata`: additional structured information
+- `raw_event`: sanitized source event
+
+See `docs/event-schema.md` for the detailed schema.
+
+## Data Quality and Security
+
+- Events are validated before insertion.
+- Invalid records are quarantined with diagnostic metadata.
+- Re-imported events are skipped using the `event_id` primary key.
+- Sensitive fields are redacted before normalized events are stored.
+- Database writes use parameterized SQL.
+- Local raw logs may contain sensitive information and must not be committed.
+- `.env` must remain local and must never be committed.
+- Keep the honeypot, web application, and proxy restricted to localhost unless a separately reviewed deployment plan requires otherwise.
+
+For controlled experiments, use explicit `scenario_id` or `test_run_id` mappings when correlating events across sources. Do not infer that events belong to the same scenario from matching IP addresses alone.
+
+## Current Limitations
+
+- The initial pipeline collects and stores events; it does not yet represent the complete detection and dashboard system.
+- Juice Shop's logged client IP may be a Docker bridge address rather than the original browser address.
+- The Nginx configuration logs the request method, URI path, status code, timestamp, and source address. It does not capture request bodies, cookies, or authorization headers.
+- Correlation, detection rules or models, and API/dashboard integration require further development by the team.
+
+## Next Steps
+
+1. Expand tests for duplicate imports, invalid timestamps, and sensitive-field redaction.
+2. Complete and review the event schema documentation.
+3. Review Git changes to ensure no secrets or raw logs are staged.
+4. Integrate the schema with the detection and API/dashboard components.
+5. Test the complete pipeline using controlled, documented test runs.
