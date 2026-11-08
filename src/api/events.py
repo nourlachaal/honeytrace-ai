@@ -1,12 +1,13 @@
 import base64
 import binascii
-import os
 import re
 from datetime import datetime
 from typing import Any
 
 import psycopg
 from psycopg.rows import dict_row
+
+from src.api.config import api_database_url
 
 CONNECT_TIMEOUT_SECONDS = 2
 STATEMENT_TIMEOUT_MS = 5000
@@ -89,7 +90,7 @@ def fetch_events(
     second query. Only fixed SQL fragments are concatenated; every value is bound
     as a parameter.
     """
-    url = os.getenv("API_DATABASE_URL")
+    url = api_database_url()
     if not url:
         raise DatabaseNotConfigured
 

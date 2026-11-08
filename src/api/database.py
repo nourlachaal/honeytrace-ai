@@ -1,18 +1,13 @@
-import os
-from pathlib import Path
-
 import psycopg
-from dotenv import load_dotenv
+
+from src.api.config import api_database_url
 
 READINESS_TIMEOUT_SECONDS = 2
-
-PROJECT_ROOT = Path(__file__).resolve().parents[2]
-load_dotenv(PROJECT_ROOT / ".env")
 
 
 def database_status() -> str:
     """Return 'ok', 'not_configured', or 'unavailable'. Never raises, never logs the URL."""
-    url = os.getenv("API_DATABASE_URL")
+    url = api_database_url()
     if not url:
         return "not_configured"
 
