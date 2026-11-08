@@ -16,8 +16,10 @@ from src.detection.rules import (
 )
 
 # Liste blanche : seuls ces champs peuvent entrer dans les preuves.
-SAFE_EVIDENCE_FIELDS = ("event_type", "session_id", "src_ip", "protocol", "username")
-
+SAFE_EVIDENCE_FIELDS = (
+    "event_type", "session_id", "src_ip", "protocol", "username",
+    "http_method", "route", "status_code",
+)
 
 @dataclass(frozen=True)
 class Detection:
