@@ -30,3 +30,35 @@ COWRIE_LOGIN_FAILED = Rule(
 )
 
 DEFAULT_RULES = (COWRIE_LOGIN_FAILED,)
+
+@dataclass(frozen=True)
+class ThresholdRule:
+    """Règle qui se déclenche quand `threshold` événements du même type
+    surviennent dans une même session en moins de `window_seconds`."""
+
+    rule_id: str
+    description: str
+    severity: str
+    event_types: frozenset
+    threshold: int
+    window_seconds: int
+
+    def __post_init__(self):
+        if self.severity not in SEVERITIES:
+            raise ValueError(f"Invalid severity: {self.severity}")
+        if self.threshold < 2:
+            raise ValueError("threshold must be at least 2")
+        if self.window_seconds <= 0:
+            raise ValueError("window_seconds must be positive")
+
+
+COWRIE_BRUTE_FORCE = ThresholdRule(
+    rule_id="COWRIE_BRUTE_FORCE_SESSION",
+    description="Repeated failed logins within a single Cowrie session.",
+    severity="medium",
+    event_types=frozenset({"cowrie.login.failed"}),
+    threshold=5,
+    window_seconds=60,
+)
+
+DEFAULT_THRESHOLD_RULES = (COWRIE_BRUTE_FORCE,)
