@@ -1,7 +1,7 @@
 # HoneyTrace AI — API Field Policy
 
 Status: **approved for the current milestone**.
-Applies to: `GET /events` and any future read endpoint over `security_events`.
+Applies to: `GET /events`, `GET /events/{event_id}`, and any future read endpoint over `security_events`.
 
 ## Principle
 
@@ -41,7 +41,7 @@ be exposed on the assumption that "sanitized" means "safe".
 
 ## API-facing contract
 
-`GET /events` returns exactly these fields:
+`GET /events` and `GET /events/{event_id}` return exactly these fields:
 
 ```
 event_id, source, event_timestamp, collected_at, event_type, session_id,

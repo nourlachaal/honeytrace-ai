@@ -1,18 +1,20 @@
 from datetime import datetime
 from typing import Annotated, Literal
 
-from fastapi import FastAPI, HTTPException, Query, Response, status
+from fastapi import FastAPI, HTTPException, Path, Query, Response, status
 
 from src.api.database import database_status
 from src.api.events import (
     CursorError,
     DatabaseNotConfigured,
     DatabaseUnavailable,
+    EVENT_ID_REGEX,
     decode_cursor,
     encode_cursor,
+    fetch_event,
     fetch_events,
 )
-from src.api.models import EventPage
+from src.api.models import EventPage, EventSummary
 
 app = FastAPI(
     title="HoneyTrace AI API",
@@ -89,3 +91,29 @@ def list_events(
         next_cursor = encode_cursor(last["event_timestamp"], last["event_id"])
 
     return EventPage(items=items, next_cursor=next_cursor)
+
+
+@app.get("/events/{event_id}", response_model=EventSummary)
+def get_event(
+    event_id: Annotated[str, Path(pattern=EVENT_ID_REGEX)],
+) -> EventSummary:
+    try:
+        row = fetch_event(event_id)
+    except DatabaseNotConfigured:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="database_not_configured",
+        ) from None
+    except DatabaseUnavailable:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="database_unavailable",
+        ) from None
+
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="event_not_found",
+        )
+
+    return EventSummary.model_validate(row)

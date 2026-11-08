@@ -15,7 +15,7 @@ The initial data collection and storage pipeline is implemented and tested.
 - Quarantine records for invalid input
 - Automated tests for normalization and Juice Shop collection
 
-**Current verification:** 26 automated tests pass. The latest database verification showed 10 Cowrie events and 80 Juice Shop events.
+**Current verification:** 37 automated tests pass. The latest database verification showed 10 Cowrie events and 80 Juice Shop events.
 
 ## Architecture
 
@@ -133,7 +133,7 @@ Run the full test suite:
 python -m pytest tests/ -q
 ```
 
-The current suite contains 26 passing tests covering normalization, Juice Shop collector behavior, and the API health and events endpoints.
+The current suite contains 37 passing tests covering normalization, Juice Shop collector behavior, and the API health, events, and event-detail endpoints.
 
 ## Event Storage
 

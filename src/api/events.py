@@ -12,7 +12,8 @@ from src.api.config import api_database_url
 CONNECT_TIMEOUT_SECONDS = 2
 STATEMENT_TIMEOUT_MS = 5000
 
-EVENT_ID_PATTERN = re.compile(r"^[0-9a-f]{64}$")
+EVENT_ID_REGEX = r"^[0-9a-f]{64}$"
+EVENT_ID_PATTERN = re.compile(EVENT_ID_REGEX)
 
 # Mirrors docs/api-field-policy.md and the column grants in sql/002.
 SELECT_COLUMNS = (
@@ -45,6 +46,15 @@ class DatabaseNotConfigured(RuntimeError):
 
 class DatabaseUnavailable(RuntimeError):
     """The read-only database could not be reached or queried."""
+
+
+def _connect(url: str) -> psycopg.Connection:
+    return psycopg.connect(
+        url,
+        connect_timeout=CONNECT_TIMEOUT_SECONDS,
+        application_name="honeytrace-api",
+        options=f"-c statement_timeout={STATEMENT_TIMEOUT_MS}",
+    )
 
 
 def encode_cursor(event_timestamp: datetime, event_id: str) -> str:
@@ -128,14 +138,30 @@ def fetch_events(
     query += _ORDER_AND_LIMIT
 
     try:
-        with psycopg.connect(
-            url,
-            connect_timeout=CONNECT_TIMEOUT_SECONDS,
-            application_name="honeytrace-api",
-            options=f"-c statement_timeout={STATEMENT_TIMEOUT_MS}",
-        ) as connection:
+        with _connect(url) as connection:
             with connection.cursor(row_factory=dict_row) as cursor_obj:
                 cursor_obj.execute(query, params)
                 return list(cursor_obj.fetchall())
+    except psycopg.Error as exc:
+        raise DatabaseUnavailable from exc
+
+
+def fetch_event(event_id: str) -> dict[str, Any] | None:
+    """Fetch one approved event row by id, or None when no such row exists.
+
+    Same column allowlist as fetch_events. The id is bound as a parameter and
+    is already validated as 64 lowercase hex characters by the route.
+    """
+    url = api_database_url()
+    if not url:
+        raise DatabaseNotConfigured
+
+    query = _BASE_QUERY + " WHERE event_id = %(event_id)s"
+
+    try:
+        with _connect(url) as connection:
+            with connection.cursor(row_factory=dict_row) as cursor_obj:
+                cursor_obj.execute(query, {"event_id": event_id})
+                return cursor_obj.fetchone()
     except psycopg.Error as exc:
         raise DatabaseUnavailable from exc
