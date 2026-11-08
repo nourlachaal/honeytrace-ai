@@ -1,3 +1,4 @@
+
 """Moteur de détection : applique des règles à des événements normalisés."""
 
 import hashlib
@@ -7,8 +8,10 @@ from typing import Iterable, Optional
 
 from src.detection.rules import (
     DEFAULT_RULES,
+    DEFAULT_SEQUENCE_RULES,
     DEFAULT_THRESHOLD_RULES,
     Rule,
+    SequenceRule,
     ThresholdRule,
 )
 
@@ -57,10 +60,14 @@ class DetectionEngine:
         self,
         rules: Optional[Iterable[Rule]] = None,
         threshold_rules: Optional[Iterable[ThresholdRule]] = None,
+        sequence_rules: Optional[Iterable[SequenceRule]] = None,
     ):
         self.rules = tuple(DEFAULT_RULES if rules is None else rules)
         self.threshold_rules = tuple(
             DEFAULT_THRESHOLD_RULES if threshold_rules is None else threshold_rules
+        )
+        self.sequence_rules = tuple(
+            DEFAULT_SEQUENCE_RULES if sequence_rules is None else sequence_rules
         )
 
     def analyze_event(self, event, now: Optional[datetime] = None) -> list:
@@ -135,8 +142,68 @@ class DetectionEngine:
                     break  # une seule détection par session et par règle
         return results
 
+    def _analyze_sequence_rule(self, rule: SequenceRule, events: list, created_at) -> list:
+        """N événements 'prior' puis un 'final', même session_id, dans la fenêtre."""
+        relevant = rule.prior_types | rule.final_types
+        sessions = {}
+        for event in events:
+            if not _is_valid_event(event) or event["event_type"] not in relevant:
+                continue
+            session_id = event.get("session_id")
+            if not isinstance(session_id, str) or not session_id:
+                continue
+            ts = _aware_timestamp(event)
+            if ts is None:
+                continue
+            sessions.setdefault(session_id, {})[event["event_id"]] = (ts, event)
+
+        results = []
+        for session_id in sorted(sessions):
+            items = sorted(
+                sessions[session_id].values(),
+                key=lambda pair: (pair[0], pair[1]["event_id"]),
+            )
+            for final_ts, final_ev in items:
+                if final_ev["event_type"] not in rule.final_types:
+                    continue
+                # Les 'prior' doivent être STRICTEMENT avant le 'final' et dans la fenêtre.
+                priors = [
+                    (ts, ev) for ts, ev in items
+                    if ev["event_type"] in rule.prior_types
+                    and ts < final_ts
+                    and (final_ts - ts).total_seconds() <= rule.window_seconds
+                ]
+                if len(priors) < rule.prior_count:
+                    continue
+                chosen = priors[-rule.prior_count:]
+                event_ids = tuple(ev["event_id"] for _, ev in chosen) + (final_ev["event_id"],)
+                evidence = {
+                    "session_id": session_id,
+                    "prior_count": rule.prior_count,
+                    "window_seconds": rule.window_seconds,
+                    "first_event_at": chosen[0][0].isoformat(),
+                    "last_event_at": final_ts.isoformat(),
+                }
+                if final_ev.get("src_ip") is not None:
+                    evidence["src_ip"] = final_ev["src_ip"]
+                if final_ev.get("username") is not None:
+                    evidence["username"] = final_ev["username"]
+                results.append(
+                    Detection(
+                        detection_id=_detection_id(rule.rule_id, event_ids),
+                        rule_id=rule.rule_id,
+                        description=rule.description,
+                        severity=rule.severity,
+                        source_event_ids=event_ids,
+                        evidence=evidence,
+                        created_at=created_at,
+                    )
+                )
+                break  # une détection par session et par règle
+        return results
+
     def analyze(self, events: Iterable, now: Optional[datetime] = None) -> list:
-        """Applique règles simples et règles à seuil, dédoublonne par detection_id."""
+        """Applique règles simples, à seuil et de séquence ; dédoublonne par detection_id."""
         events = list(events)
         created_at = now or datetime.now(timezone.utc)
         seen = set()
@@ -150,7 +217,13 @@ class DetectionEngine:
         for event in events:
             for detection in self.analyze_event(event, now=created_at):
                 add(detection)
+
         for rule in self.threshold_rules:
             for detection in self._analyze_threshold_rule(rule, events, created_at):
                 add(detection)
+
+        for rule in self.sequence_rules:
+            for detection in self._analyze_sequence_rule(rule, events, created_at):
+                add(detection)
+
         return results

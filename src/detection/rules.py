@@ -62,3 +62,38 @@ COWRIE_BRUTE_FORCE = ThresholdRule(
 )
 
 DEFAULT_THRESHOLD_RULES = (COWRIE_BRUTE_FORCE,)
+
+@dataclass(frozen=True)
+class SequenceRule:
+    """N événements 'prior' suivis d'un événement 'final', dans une même session."""
+
+    rule_id: str
+    description: str
+    severity: str
+    prior_types: frozenset
+    prior_count: int
+    final_types: frozenset
+    window_seconds: int
+
+    def __post_init__(self):
+        if self.severity not in SEVERITIES:
+            raise ValueError(f"Invalid severity: {self.severity}")
+        if self.prior_count < 1:
+            raise ValueError("prior_count must be at least 1")
+        if self.window_seconds <= 0:
+            raise ValueError("window_seconds must be positive")
+        if self.prior_types & self.final_types:
+            raise ValueError("prior_types and final_types must be disjoint")
+
+
+COWRIE_SUCCESS_AFTER_FAILURES = SequenceRule(
+    rule_id="COWRIE_SUCCESS_AFTER_FAILURES",
+    description="Successful login after repeated failures in the same Cowrie session.",
+    severity="high",
+    prior_types=frozenset({"cowrie.login.failed"}),
+    prior_count=3,
+    final_types=frozenset({"cowrie.login.success"}),
+    window_seconds=300,
+)
+
+DEFAULT_SEQUENCE_RULES = (COWRIE_SUCCESS_AFTER_FAILURES,)
