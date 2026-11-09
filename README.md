@@ -15,7 +15,7 @@ The initial data collection and storage pipeline is implemented and tested.
 - Quarantine records for invalid input
 - Automated tests for normalization and Juice Shop collection
 
-**Current verification:** 37 automated tests pass. The latest database verification showed 10 Cowrie events and 80 Juice Shop events.
+**Current verification:** 47 automated tests pass. The latest database verification showed 10 Cowrie events and 80 Juice Shop events. The latest database verification showed 10 Cowrie events and 80 Juice Shop events.
 
 ## Architecture
 
@@ -43,22 +43,40 @@ honeytrace-ai/
 │   │   └── juice-shop/
 │   └── quarantine/
 ├── src/
+│   ├── api/
+│   │   ├── main.py
+│   │   ├── events.py
+│   │   ├── models.py
+│   │   ├── database.py
+│   │   └── config.py
 │   ├── collectors/
 │   │   ├── cowrie_collector.py
 │   │   └── juice_shop_collector.py
+│   ├── dashboard/
+│   │   ├── app.py
+│   │   └── api_client.py
 │   ├── normalization/
 │   │   └── normalize.py
 │   └── storage/
 │       ├── postgres.py
 │       └── check_connection.py
 ├── sql/
-│   └── 001_create_security_events.sql
+│   ├── 001_create_security_events.sql
+│   └── 002_create_api_readonly_role.sql
 ├── tests/
+│   ├── test_api_events.py
+│   ├── test_api_event_detail.py
+│   ├── test_api_health.py
+│   ├── test_api_health_db.py
 │   ├── test_cowrie_collector.py
+│   ├── test_dashboard_app.py
+│   ├── test_dashboard_client.py
 │   ├── test_juice_shop_collector.py
 │   └── test_normalize.py
 ├── docs/
+│   ├── api-field-policy.md
 │   └── event-schema.md
+├── docker-compose.yml
 ├── .env.example
 ├── .gitignore
 ├── requirements.txt
@@ -125,6 +143,39 @@ python -m src.collectors.juice_shop_collector
 
 The collectors report inserted events, duplicate events skipped, and quarantined records.
 
+## Running the API
+
+The API is read-only and connects with the dedicated `honeytrace_api` role, never
+the collector's write account.
+
+```powershell
+docker compose up -d
+python -m uvicorn src.api.main:app --host 127.0.0.1 --port 8000
+```
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /health` | liveness; never touches the database |
+| `GET /health/db` | readiness; `200 ok`, or `503 not_configured` / `unavailable` |
+| `GET /events` | newest-first events with cursor pagination and filters |
+| `GET /events/{event_id}` | one event; `404` unknown, `422` malformed id |
+
+`GET /events` accepts `limit` (1-200, default 50), `cursor`, `source`, `event_type`,
+`src_ip`, `since`, and `until`. Timestamps must include a timezone. Interactive
+documentation is available at `http://127.0.0.1:8000/docs`.
+
+The API returns exactly 13 approved fields. See `docs/api-field-policy.md`.
+
+## Running the Dashboard
+
+```powershell
+python -m streamlit run src/dashboard/app.py
+```
+
+The dashboard reads only through the HTTP API (default `http://127.0.0.1:8000`,
+override with `API_BASE_URL`). It never connects to PostgreSQL directly, so the
+field allowlist and the column-level grants remain the only access path.
+
 ## Running Tests
 
 Run the full test suite:
@@ -133,7 +184,7 @@ Run the full test suite:
 python -m pytest tests/ -q
 ```
 
-The current suite contains 37 passing tests covering normalization, Juice Shop collector behavior, and the API health, events, and event-detail endpoints.
+The current suite contains 47 passing tests covering normalization, collector behavior, the API health, events and event-detail endpoints, and the dashboard's HTTP client and rendering.
 
 ## Event Storage
 
