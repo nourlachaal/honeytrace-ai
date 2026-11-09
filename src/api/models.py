@@ -4,13 +4,10 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict
 
 
+# API-facing event contract.
+# Never add raw_event, metadata, command, message, or username here.
+# See docs/api-field-policy.md.
 class EventSummary(BaseModel):
-    """API-facing event contract.
-
-    Never add raw_event, metadata, command, message, or username here.
-    See docs/api-field-policy.md.
-    """
-
     model_config = ConfigDict(extra="forbid")
 
     event_id: str
