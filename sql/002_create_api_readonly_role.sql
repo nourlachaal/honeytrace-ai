@@ -1,8 +1,8 @@
--- STATUS: DRAFT — NOT APPLIED. Requires review before it is committed or run.
+-- STATUS: APPLIED to the local Docker database; still requires review before merge.
 --
 -- Creates the read-only role used by the API.
 -- The password is set interactively and never stored in this file:
---     psql -U <owner> -d honeytrace
+--     psql -U hive -d honeytrace
 --     \password honeytrace_api
 --
 -- Boundary:

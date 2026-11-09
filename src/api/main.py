@@ -18,7 +18,7 @@ from src.api.models import EventPage, EventSummary
 
 app = FastAPI(
     title="HoneyTrace AI API",
-    description="Read-only API for normalized security events and incidents.",
+    description="Read-only API for normalized security events.",
     version="0.1.0",
 )
 

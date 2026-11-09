@@ -58,9 +58,10 @@ returned. Absent, not null, not truncated.
    `$request_uri`, `route` must be reclassified as internal in the same change.
 2. **No value-level scrubber is assumed.** If one is added later, it is a separate
    reviewed change; this policy is not silently upgraded by it.
-3. **No single-event endpoint exists yet.** If one is added, `command`, `message`,
-   and `username` still require an explicit, separately approved policy. Truncation
-   alone is not accepted as a safety measure.
+3. **`GET /events/{event_id}` exists and returns the same allowlist.** Adding
+   `command`, `message`, or `username` to either endpoint still requires an
+   explicit, separately approved policy. Truncation alone is not accepted as a
+   safety measure.
 
 ## Database enforcement
 
