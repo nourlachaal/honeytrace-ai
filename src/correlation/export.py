@@ -19,6 +19,7 @@ def detection_to_dict(detection) -> dict:
         "source_event_ids": list(detection.source_event_ids),
         "evidence": dict(detection.evidence),
         "created_at": _iso(detection.created_at),
+        "detector_version": detection.detector_version,
     }
 
 

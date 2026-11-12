@@ -21,6 +21,8 @@ SAFE_EVIDENCE_FIELDS = (
     "http_method", "route", "status_code",
 )
 
+DETECTOR_VERSION = "1.0.0"
+
 @dataclass(frozen=True)
 class Detection:
     detection_id: str
@@ -30,7 +32,7 @@ class Detection:
     source_event_ids: tuple
     evidence: dict = field(default_factory=dict)
     created_at: Optional[datetime] = None
-
+    detector_version: str = DETECTOR_VERSION
 
 def _is_valid_event(event) -> bool:
     return (

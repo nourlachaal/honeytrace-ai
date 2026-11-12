@@ -78,3 +78,15 @@ def test_single_converters_return_plain_types():
     detections, incidents = pipeline()
     json.dumps(detection_to_dict(detections[0]))
     json.dumps(incident_to_dict(incidents[0]))
+
+def test_detections_carry_detector_version_and_ids_do_not_depend_on_it():
+    from src.detection.engine import DETECTOR_VERSION, _detection_id
+
+    detections, _ = pipeline()
+    data = export_results(detections, [])
+    assert data["detections"]
+    assert all(d["detector_version"] == DETECTOR_VERSION for d in data["detections"])
+
+    # L'identifiant est calculé uniquement à partir de la règle et des événements.
+    for d in detections:
+        assert d.detection_id == _detection_id(d.rule_id, d.source_event_ids)    

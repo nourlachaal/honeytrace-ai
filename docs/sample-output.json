@@ -4,6 +4,7 @@
       "created_at": "2026-11-08T12:00:00+00:00",
       "description": "Failed SSH/Telnet login attempt observed on the Cowrie honeypot.",
       "detection_id": "1ae4e9eb5d6c6524c8eae3d724adeb7dd91b236b961e8c87a5f13c9a40951344",
+      "detector_version": "1.0.0",
       "evidence": {
         "event_type": "cowrie.login.failed",
         "session_id": "real-1",
@@ -20,6 +21,7 @@
       "created_at": "2026-11-08T12:00:00+00:00",
       "description": "Failed SSH/Telnet login attempt observed on the Cowrie honeypot.",
       "detection_id": "43c29b827f7affdc7b8c5f897d55e938252f9f5602799ff2dac9941e4e50d9cc",
+      "detector_version": "1.0.0",
       "evidence": {
         "event_type": "cowrie.login.failed",
         "session_id": "real-1",
@@ -36,6 +38,7 @@
       "created_at": "2026-11-08T12:00:00+00:00",
       "description": "Repeated failed logins within a single Cowrie session.",
       "detection_id": "4f3ecf55b447f543f85e913fcf8bf9616faff028d14785c52358db45b98096b0",
+      "detector_version": "1.0.0",
       "evidence": {
         "count": 5,
         "first_event_at": "2026-10-28T10:00:00+00:00",
@@ -58,6 +61,7 @@
       "created_at": "2026-11-08T12:00:00+00:00",
       "description": "Failed SSH/Telnet login attempt observed on the Cowrie honeypot.",
       "detection_id": "52e9a12afb4e0eefe94835267dea75b0c6b84035107b7e8f9ba68849727b0f95",
+      "detector_version": "1.0.0",
       "evidence": {
         "event_type": "cowrie.login.failed",
         "session_id": "real-1",
@@ -74,6 +78,7 @@
       "created_at": "2026-11-08T12:00:00+00:00",
       "description": "Failed SSH/Telnet login attempt observed on the Cowrie honeypot.",
       "detection_id": "9c912b8d70417dafb06182dc0c1a04638903c1961177f35b04837d307617fac7",
+      "detector_version": "1.0.0",
       "evidence": {
         "event_type": "cowrie.login.failed",
         "session_id": "real-1",
@@ -90,6 +95,7 @@
       "created_at": "2026-11-08T12:00:00+00:00",
       "description": "Failed SSH/Telnet login attempt observed on the Cowrie honeypot.",
       "detection_id": "da4c0f862f849d2cffea6549f55c6641a170710b1f8012f042358135fa786753",
+      "detector_version": "1.0.0",
       "evidence": {
         "event_type": "cowrie.login.failed",
         "session_id": "real-1",
@@ -106,6 +112,7 @@
       "created_at": "2026-11-08T12:00:00+00:00",
       "description": "Command using a download tool (possible payload retrieval).",
       "detection_id": "fdeed66adaa6a3cc1d11a46209d2fd18b13b1c872e265928bb4950c5cc64f97c",
+      "detector_version": "1.0.0",
       "evidence": {
         "event_type": "cowrie.command.input",
         "session_id": "real-1",
