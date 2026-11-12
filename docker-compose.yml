@@ -1,0 +1,42 @@
+# HoneyTrace AI — local PostgreSQL for the collectors and the read-only API.
+#
+# Usage:
+#   docker compose up -d
+#   docker compose ps
+#
+# The schema (sql/001) and the read-only role (sql/002) are applied automatically
+# on FIRST start only, when the data volume is empty. On an existing volume they
+# are not re-applied; use psql to apply new migrations deliberately.
+#
+# Both passwords are read from the git-ignored .env file.
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: honeytrace-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: hive
+      POSTGRES_DB: honeytrace
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      API_DATABASE_PASSWORD: ${API_DATABASE_PASSWORD:?set API_DATABASE_PASSWORD in .env}
+    ports:
+      # Loopback only. Do not publish the database on every interface.
+      - "127.0.0.1:5433:5432"
+    volumes:
+      - honeytrace_pgdata:/var/lib/postgresql/data
+      - ./sql/001_create_security_events.sql:/docker-entrypoint-initdb.d/001_create_security_events.sql:ro
+      - ./sql/002_create_api_readonly_role.sql:/docker-entrypoint-initdb.d/002_create_api_readonly_role.sql:ro
+      - ./docker/initdb/003_set_api_role_password.sh:/docker-entrypoint-initdb.d/003_set_api_role_password.sh:ro
+    healthcheck:
+      # -h 127.0.0.1 forces a TCP check. During initdb the temporary server
+      # listens only on the Unix socket, so a plain `pg_isready` reports
+      # "ready" while the init scripts are still running.
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U hive -d honeytrace"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+
+volumes:
+  honeytrace_pgdata:
+    name: honeytrace_pgdata

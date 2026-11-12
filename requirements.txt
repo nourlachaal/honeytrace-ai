@@ -1,5 +1,9 @@
 psycopg[binary]>=3.2
 python-dotenv>=1.0
 pytest>=8.0
+fastapi>=0.100
+uvicorn[standard]>=0.23
+httpx>=0.24
+streamlit>=1.60
 numpy>=2.0
 scikit-learn>=1.5
