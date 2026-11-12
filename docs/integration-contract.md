@@ -1,143 +1,124 @@
 # HoneyTrace AI — Detection and Incident Integration Contract
 
-**Status:** Draft for team review  
-**Scope:** Person 2's detection engine and incident correlation, integrated with the existing event schema and the future FastAPI service.
+**Status:** Proposal, pending validation by Person 1 and Person 3.
+Field names reflect `docs/sample-output.json`, produced by the code on branch `feature/detection-ml`. The code is tested and is the reference.
 
 ## 1. Existing event source
 
 The `security_events` table remains the source of truth for collected, normalized events.
 
-The detection engine reads normalized events and does not modify or delete them. Every detection or incident must retain explicit references to the relevant `security_events.event_id` values.
+The detection engine reads normalized events and never modifies or deletes them. Every detection and incident keeps explicit references to `security_events.event_id` values.
 
-`scenario_id` and `test_run_id` are optional. They may be populated only from verified test-run context. Neither identifier, nor an IP address match alone, proves that two events are causally related.
+`scenario_id` and `test_run_id` are optional and only set from verified test context. Neither of them, nor an identical IP address, proves that two events are related. The engine never correlates events by IP.
 
-## 2. Detection model
+## 2. Detection
 
-A detection represents a finding produced by a rule or analytical detector.
+A detection is a finding produced by one rule. It is a signal, not a confirmed attack.
 
-Proposed fields:
+| Field | Type | Description |
+|---|---|---|
+| `detection_id` | string | SHA-256 of `rule_id` and the sorted `source_event_ids`. Deterministic. |
+| `rule_id` | string | Identifier of the rule that fired. |
+| `description` | string | Fixed text describing the rule. |
+| `detector_version` | string | Version of the rule set that produced the finding (for traceability). |
+| `severity` | string | `low`, `medium`, `high` or `critical`. |
+| `source_event_ids` | list of string | `event_id` values of the supporting events. |
+| `evidence` | object | Allowlisted, sanitized fields. Never contains commands, messages or passwords. |
+| `created_at` | ISO 8601 UTC | Time the detection was produced by the engine. |
 
-- `detection_id`: stable identifier.
-- `rule_id`: identifier of the rule or detector.
-- `detector_version`: version used to produce the finding.
-- `severity`: `low`, `medium`, `high`, or `critical`.
-- `confidence`: optional numeric score between 0 and 1, when meaningful.
-- `event_ids`: references to supporting normalized events.
-- `evidence`: sanitized, structured observations explaining the finding.
-- `created_at`: UTC timestamp of initial creation.
-- `updated_at`: UTC timestamp of the most recent update, if mutable detections are supported.
-- `scenario_id`, `test_run_id`: optional verified test context.
+Notes:
+- `detector_version` is a separate field. It is NOT part of `detection_id`, so changing a rule does not create duplicate detections.
+- Reprocessing the same events yields the same `detection_id`.
+- There is no `confidence` field: rules have no computed confidence, so none is invented.
+- Detections are inserted with `ON CONFLICT (detection_id) DO NOTHING` and are never deleted.
 
-### Detection identity and updates
+## 3. Incident
 
-The proposed deterministic identity uses the detector/rule identity and version together with a canonical representation of the event IDs or analysis subject.
+An incident groups the detections of one verified session. Events are linked only through a verified `session_id`, never through an IP address.
 
-Canonical event ID collections must be sorted and deduplicated before hashing.
+| Field | Type | Description |
+|---|---|---|
+| `incident_id` | string | 64-character SHA-256 of `source` and `session_id`. Stable when evidence is added. The dashboard may display the first 12 characters only. |
+| `title` | string | Generic title. Contains no text taken from events. |
+| `summary` | string | Number of detections, rule IDs and number of events. |
+| `severity` | string | Highest severity among linked detections. |
+| `status` | string | `open`, `under_review`, `resolved` or `false_positive`. |
+| `created_at`, `updated_at` | ISO 8601 UTC | Creation and last engine update. |
+| `source` | string | Event source (for example `cowrie`). |
+| `session_id` | string | Verified session identifier. |
+| `detection_ids` | list of string | Linked detections. |
+| `event_ids` | list of string | Events of the session, in chronological order. |
+| `missing_event_ids` | list of string | Events cited by a detection but absent from the analysed batch. This does NOT prove that an event was deleted. |
+| `timeline` | list of object | Chronological entries: `timestamp`, `event_id`, `event_type`, `source`, `detection_ids`. |
 
-Repeated processing of the same input with the same detector version must be idempotent.
+Notes:
+- By default an incident is created only when its severity is `medium` or higher.
+- Juice Shop events have no `session_id` (the Nginx log has no session identifier), so they produce detections but no incidents.
+- Detections and incidents use different names on purpose: `source_event_ids` for detections, `event_ids` for incidents.
 
-**Proposed update policy:** if a finding belongs to the same rule, detector version, and analysis subject, retain its `detection_id` when new supporting evidence arrives. Update the evidence and `updated_at`. Preserve prior evidence in an audit history if required by the team.
+## 4. Status and update policy (proposal)
 
-If a new input represents a distinct analysis subject, create a separate detection. The precise definition of an analysis subject must be agreed for each detector.
+The engine owns the evidence: detections, events, timeline, severity, summary and `updated_at`. Analysts own `status`.
 
-## 3. Incident model
+- A new incident is created with `status = open`.
+- A re-run of the engine NEVER modifies `status`.
+- Severity is recalculated by the engine as the maximum over linked detections.
+- Detections are never deleted.
 
-An incident represents a case that groups related detections and their supporting events. A detection is not automatically a confirmed incident.
+Decisions needed from the team:
+1. Does a `resolved` incident reopen when new evidence arrives? Proposal: no. Expose a boolean `has_new_evidence` instead.
+2. What happens to a `false_positive` incident on new evidence? Proposal: keep the status and set the same `has_new_evidence` flag.
+3. Should severity be allowed to decrease? Proposal: no, it can only rise.
 
-Proposed fields:
+## 5. Proposed persistence (Person 1 owns the migration, Person 3 reviews)
 
-- `incident_id`: persistent identifier, preferably a UUID.
-- `title`: concise incident title.
-- `summary`: evidence-based explanation.
-- `severity`: `low`, `medium`, `high`, or `critical`.
-- `status`: `open`, `under_review`, `resolved`, or `false_positive`.
-- `created_at`: UTC timestamp of creation.
-- `updated_at`: UTC timestamp of the most recent change.
+These are proposals only. Person 1 decides the final schema (link tables, indexes).
 
-### Incident lifecycle
+### Table `detections`
 
-- New incidents begin with status `open`.
-- Analysts or approved workflow logic can move an incident to `under_review`.
-- An authorized workflow can mark an incident `resolved` or `false_positive`.
-- New evidence can update an existing incident without changing its `incident_id`.
-- Repeated correlation must not create duplicate incidents for the same case.
-- A resolved incident must not be reopened automatically without an explicit, agreed policy.
+| Column | Type | Note |
+|---|---|---|
+| `detection_id` | text PRIMARY KEY | SHA-256 |
+| `rule_id` | text NOT NULL | |
+| `description` | text NOT NULL | |
+| `severity` | text NOT NULL | CHECK in (`low`,`medium`,`high`,`critical`) |
+| `source_event_ids` | text[] NOT NULL | references `security_events.event_id` |
+| `evidence` | jsonb NOT NULL | allowlisted fields only |
+| `detector_version` | text NOT NULL | |
+| `created_at` | timestamptz NOT NULL | |
 
-Incident severity should reflect the available evidence and agreed severity rules. The highest severity among linked detections is a possible starting policy, subject to team approval.
+### Table `incidents`
 
-## 4. Relationships and persistence
+| Column | Type | Note |
+|---|---|---|
+| `incident_id` | text PRIMARY KEY | SHA-256 |
+| `source`, `session_id` | text NOT NULL | UNIQUE together |
+| `title`, `summary` | text NOT NULL | |
+| `severity` | text NOT NULL | CHECK as above |
+| `status` | text NOT NULL DEFAULT `open` | CHECK in (`open`,`under_review`,`resolved`,`false_positive`). Never overwritten by the engine. |
+| `detection_ids`, `event_ids`, `missing_event_ids` | text[] | or link tables |
+| `timeline` | jsonb | or rebuilt from `security_events` |
+| `created_at`, `updated_at` | timestamptz NOT NULL | |
 
-The existing `security_events` table remains unchanged until persistence changes are approved.
+The upsert of an incident updates only engine-owned columns (`severity`, `summary`, `updated_at`, id lists), never `status`.
 
-Candidate tables:
+## 6. Evidence and redaction
 
-- `detections`: one record per detection.
-- `detection_events`: links detections to supporting events.
-- `incidents`: one record per incident.
-- `incident_detections`: links incidents to detections.
+- Evidence is built from an allowlist of fields: `event_type`, `session_id`, `src_ip`, `protocol`, `username`, `http_method`, `route`, `status_code`, plus counts and timestamps.
+- Command text, `message`, `metadata` and `raw_event` are never copied into detections, incidents, timelines or exports.
+- Passwords are already redacted by the normalizer before the engine receives events.
+- The API must not expose `raw_event`. The final redaction policy and the API allowlist are decided by the team.
 
-Candidate integrity rules:
+## 7. Known limitations
 
-- Foreign keys from `detection_events.event_id` to `security_events.event_id`.
-- Foreign keys from `incident_detections.detection_id` to `detections.detection_id`.
-- Unique constraints on `(detection_id, event_id)` and `(incident_id, detection_id)`.
-- Transactional updates to prevent partially persisted relationships.
-- Explicit handling of missing event references; do not silently create invalid links.
-
-Whether to maintain a separate `incident_events` relationship table should be decided during schema review. Incident event IDs could alternatively be derived through linked detections, but a direct relationship can be useful when an incident includes contextual events not attached to an individual detection.
-
-Database tables and constraints are proposals only; no persistence schema is approved by this document alone.
-
-## 5. Evidence and redaction
-
-Evidence must be structured, sanitized, and traceable to supporting event IDs.
-
-The API must not expose unsanitized `raw_event`. JSON storage alone does not make a payload safe.
-
-The authoritative redaction policy must cover:
-
-- Sensitive key-name variants and nested values.
-- Secrets embedded in `command`, `message`, and other free-text fields.
-- Authentication credentials, tokens, private keys, and similar sensitive material.
-- Safe diagnostic messages that do not reproduce secret-bearing input.
-
-Only approved, sanitized fields may be returned through the API. The redaction policy must be finalized before evidence is exposed.
-
-## 6. API boundary
-
-The detection engine remains independent of collectors and the FastAPI application.
-
-Person 3 may implement the FastAPI skeleton, configuration, and health endpoints before event and incident endpoints are approved.
-
-Event, detection, and incident API response models must wait until the team approves the relevant fields, redaction policy, database permissions, and persistence relationships.
-
-The API should use a separate read-only database role where appropriate. Collector write access must remain separate from API read access.
-
-## 7. Initial tests
-
-Before persistence implementation, tests should cover:
-
-1. Deterministic detection IDs for equivalent inputs.
-2. Different IDs for distinct rules, detector versions, or analysis subjects where required.
-3. Idempotent reprocessing of the same input.
-4. Defined behavior when additional evidence arrives for an existing detection.
-5. Valid event references and handling of missing event IDs.
-6. Duplicate relationship prevention.
-7. Correlation across events only when sufficient evidence exists.
-8. No causal correlation based solely on source IP, scenario ID, or test run ID.
-9. Incident identity stability when new detections or events are linked.
-10. Valid severity and status transitions.
-11. Sanitization of evidence before exposure.
-12. Preservation of existing `security_events` records.
+- Threshold and sequence rules group by `session_id` only, not by `(source, session_id)`. The risk is low (Cowrie session IDs are random, Juice Shop has none) and will be fixed later.
+- Juice Shop routes come from `$uri`, so the query string and the body are not visible to the rules.
+- Cowrie command rules read `command`, then `metadata["input"]`. The real field name is to be confirmed by Person 1 on an anonymized sample.
 
 ## 8. Decisions requiring team confirmation
 
-- Exact detection identity and analysis-subject definition.
-- Detection evidence update and audit-history policy.
-- Incident severity aggregation and status-transition rules.
-- Whether resolved incidents can be reopened and under which conditions.
-- Whether an `incident_events` table is necessary.
-- Final foreign keys, uniqueness constraints, and transaction behavior.
-- Final redaction policy and API response allowlist.
-
-Implementation of persistence and event/incident API endpoints begins only after these decisions are reviewed and approved.
+- Status update policy (section 4).
+- Final schema, constraints and migration owner (section 5).
+- Redaction policy and API response allowlist.
+- Redaction of query strings if `$request_uri` is added to the Nginx log.
+- Manifest format for labels: it must contain a label per `session_id`, not only per `test_run_id`.
