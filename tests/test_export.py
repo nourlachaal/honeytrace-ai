@@ -89,4 +89,21 @@ def test_detections_carry_detector_version_and_ids_do_not_depend_on_it():
 
     # L'identifiant est calculé uniquement à partir de la règle et des événements.
     for d in detections:
-        assert d.detection_id == _detection_id(d.rule_id, d.source_event_ids)    
+        assert d.detection_id == _detection_id(d.rule_id, d.source_event_ids)   
+
+def test_public_export_never_contains_username():
+    detections, incidents = pipeline()
+    assert any("username" in d.evidence for d in detections)   # le moteur le garde
+    data = export_results(detections, incidents)
+    assert all("username" not in d["evidence"] for d in data["detections"])
+    assert "username" not in export_json(detections, incidents)
+
+
+def test_internal_export_keeps_full_evidence_for_storage():
+    from src.correlation.export import PUBLIC_EVIDENCE_FIELDS
+
+    detections, incidents = pipeline()
+    data = export_results(detections, incidents, internal=True)
+    assert any("username" in d["evidence_internal"] for d in data["detections"])
+    for d in data["detections"]:
+        assert set(d["evidence"]) <= set(PUBLIC_EVIDENCE_FIELDS)         

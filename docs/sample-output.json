@@ -8,8 +8,7 @@
       "evidence": {
         "event_type": "cowrie.login.failed",
         "session_id": "real-1",
-        "src_ip": "10.0.0.9",
-        "username": "root"
+        "src_ip": "10.0.0.9"
       },
       "rule_id": "COWRIE_LOGIN_FAILED",
       "severity": "low",
@@ -25,8 +24,7 @@
       "evidence": {
         "event_type": "cowrie.login.failed",
         "session_id": "real-1",
-        "src_ip": "10.0.0.9",
-        "username": "root"
+        "src_ip": "10.0.0.9"
       },
       "rule_id": "COWRIE_LOGIN_FAILED",
       "severity": "low",
@@ -65,8 +63,7 @@
       "evidence": {
         "event_type": "cowrie.login.failed",
         "session_id": "real-1",
-        "src_ip": "10.0.0.9",
-        "username": "root"
+        "src_ip": "10.0.0.9"
       },
       "rule_id": "COWRIE_LOGIN_FAILED",
       "severity": "low",
@@ -82,8 +79,7 @@
       "evidence": {
         "event_type": "cowrie.login.failed",
         "session_id": "real-1",
-        "src_ip": "10.0.0.9",
-        "username": "root"
+        "src_ip": "10.0.0.9"
       },
       "rule_id": "COWRIE_LOGIN_FAILED",
       "severity": "low",
@@ -99,8 +95,7 @@
       "evidence": {
         "event_type": "cowrie.login.failed",
         "session_id": "real-1",
-        "src_ip": "10.0.0.9",
-        "username": "root"
+        "src_ip": "10.0.0.9"
       },
       "rule_id": "COWRIE_LOGIN_FAILED",
       "severity": "low",

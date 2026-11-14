@@ -1,26 +1,46 @@
-"""Export JSON des détections et des incidents (format proposé, à valider
-avec Person 3 dans docs/integration-contract.md)."""
+"""Export JSON des détections et des incidents.
+
+Par défaut, l'export est PUBLIC : `evidence` est une projection qui ne contient
+que des champs autorisés (jamais `username`). `internal=True` ajoute
+`evidence_internal` (blob complet), destiné au stockage en base uniquement.
+"""
 
 import json
 from datetime import datetime
 from typing import Iterable, Optional
+
+# Champs d'evidence qu'une API peut servir. `username` en est exclu volontairement.
+PUBLIC_EVIDENCE_FIELDS = (
+    "event_type", "session_id", "src_ip", "protocol",
+    "http_method", "route", "status_code",
+    "count", "window_seconds", "prior_count",
+    "first_event_at", "last_event_at",
+)
 
 
 def _iso(value: Optional[datetime]) -> Optional[str]:
     return value.isoformat() if isinstance(value, datetime) else None
 
 
-def detection_to_dict(detection) -> dict:
-    return {
+def public_evidence(evidence: dict) -> dict:
+    """Projection de l'evidence : uniquement les champs de la liste blanche."""
+    return {k: evidence[k] for k in PUBLIC_EVIDENCE_FIELDS if k in evidence}
+
+
+def detection_to_dict(detection, internal: bool = False) -> dict:
+    data = {
         "detection_id": detection.detection_id,
         "rule_id": detection.rule_id,
         "description": detection.description,
         "severity": detection.severity,
         "source_event_ids": list(detection.source_event_ids),
-        "evidence": dict(detection.evidence),
+        "evidence": public_evidence(detection.evidence),
         "created_at": _iso(detection.created_at),
         "detector_version": detection.detector_version,
     }
+    if internal:
+        data["evidence_internal"] = dict(detection.evidence)
+    return data
 
 
 def timeline_entry_to_dict(entry) -> dict:
@@ -51,11 +71,11 @@ def incident_to_dict(incident) -> dict:
     }
 
 
-def export_results(detections: Iterable, incidents: Iterable) -> dict:
+def export_results(detections: Iterable, incidents: Iterable, internal: bool = False) -> dict:
     """Structure complète, triée pour être déterministe."""
     return {
         "detections": [
-            detection_to_dict(d)
+            detection_to_dict(d, internal=internal)
             for d in sorted(detections, key=lambda d: d.detection_id)
         ],
         "incidents": [
@@ -65,9 +85,9 @@ def export_results(detections: Iterable, incidents: Iterable) -> dict:
     }
 
 
-def export_json(detections: Iterable, incidents: Iterable) -> str:
+def export_json(detections: Iterable, incidents: Iterable, internal: bool = False) -> str:
     return json.dumps(
-        export_results(detections, incidents),
+        export_results(detections, incidents, internal=internal),
         sort_keys=True,
         ensure_ascii=False,
         indent=2,

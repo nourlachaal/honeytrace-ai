@@ -59,6 +59,17 @@ def _aware_timestamp(event: dict) -> Optional[datetime]:
     return None
 
 
+def _session_key(event: dict):
+    """(source, session_id) si la session est exploitable, sinon None."""
+    session_id = event.get("session_id")
+    if not isinstance(session_id, str) or not session_id:
+        return None
+    source = event.get("source")
+    if not isinstance(source, str) or not source:
+        source = "unknown"
+    return source, session_id
+
+
 class DetectionEngine:
     def __init__(
         self,
@@ -102,20 +113,21 @@ class DetectionEngine:
         for event in events:
             if not _is_valid_event(event) or event["event_type"] not in rule.event_types:
                 continue
-            session_id = event.get("session_id")
-            if not isinstance(session_id, str) or not session_id:
+            key = _session_key(event)
+            if key is None:
                 continue  # sans session vérifiée, on ne relie rien
             ts = _aware_timestamp(event)
             if ts is None:
                 continue
             # clé = event_id : un même événement vu deux fois ne compte qu'une fois
-            sessions.setdefault(session_id, {})[event["event_id"]] = (ts, event)
+            sessions.setdefault(key, {})[event["event_id"]] = (ts, event)
 
         results = []
         n = rule.threshold
-        for session_id in sorted(sessions):
+        for key in sorted(sessions):
+            session_id = key[1]
             items = sorted(
-                sessions[session_id].values(),
+                sessions[key].values(),
                 key=lambda pair: (pair[0], pair[1]["event_id"]),
             )
             for i in range(len(items) - n + 1):
@@ -153,18 +165,19 @@ class DetectionEngine:
         for event in events:
             if not _is_valid_event(event) or event["event_type"] not in relevant:
                 continue
-            session_id = event.get("session_id")
-            if not isinstance(session_id, str) or not session_id:
-                continue
+            key = _session_key(event)
+            if key is None:
+                continue  # sans session vérifiée, on ne relie rien
             ts = _aware_timestamp(event)
             if ts is None:
                 continue
-            sessions.setdefault(session_id, {})[event["event_id"]] = (ts, event)
+            sessions.setdefault(key, {})[event["event_id"]] = (ts, event)
 
         results = []
-        for session_id in sorted(sessions):
+        for key in sorted(sessions):
+            session_id = key[1]
             items = sorted(
-                sessions[session_id].values(),
+                sessions[key].values(),
                 key=lambda pair: (pair[0], pair[1]["event_id"]),
             )
             for final_ts, final_ev in items:
