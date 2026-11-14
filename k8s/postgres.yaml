@@ -1,0 +1,122 @@
+# ---------------------------------------------------------------- disk
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: honeytrace-pgdata
+  namespace: honeytrace
+spec:
+  accessModes: ["ReadWriteOnce"]
+  storageClassName: hostpath
+  resources:
+    requests:
+      storage: 1Gi
+---
+# ---------------------------------------------------------------- name
+apiVersion: v1
+kind: Service
+metadata:
+  name: honeytrace-postgres
+  namespace: honeytrace
+spec:
+  type: ClusterIP
+  selector:
+    app: honeytrace-postgres
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: 5432
+---
+# ---------------------------------------------------------------- workload
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: honeytrace-postgres
+  namespace: honeytrace
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: honeytrace-postgres
+  template:
+    metadata:
+      labels:
+        app: honeytrace-postgres
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 60
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 70
+        runAsGroup: 70
+        fsGroup: 70
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          env:
+            - name: POSTGRES_USER
+              value: hive
+            - name: POSTGRES_DB
+              value: honeytrace
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: honeytrace-pg-secret
+                  key: POSTGRES_PASSWORD
+            - name: API_DATABASE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: honeytrace-pg-secret
+                  key: API_DATABASE_PASSWORD
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          ports:
+            - name: postgres
+              containerPort: 5432
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 512Mi
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "hive", "-d", "honeytrace"]
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            exec:
+              command: ["pg_isready", "-U", "hive", "-d", "honeytrace"]
+            initialDelaySeconds: 30
+            periodSeconds: 20
+          volumeMounts:
+            - name: pgdata
+              mountPath: /var/lib/postgresql/data
+            - name: db-init
+              mountPath: /docker-entrypoint-initdb.d
+              readOnly: true
+            - name: run
+              mountPath: /var/run/postgresql
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: pgdata
+          persistentVolumeClaim:
+            claimName: honeytrace-pgdata
+        - name: db-init
+          configMap:
+            name: honeytrace-db-init
+            defaultMode: 0555
+        - name: run
+          emptyDir: {}
+        - name: tmp
+          emptyDir: {}

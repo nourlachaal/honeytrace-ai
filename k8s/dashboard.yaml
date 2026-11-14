@@ -1,0 +1,96 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: honeytrace-dashboard
+  namespace: honeytrace
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: honeytrace-dashboard
+  template:
+    metadata:
+      labels:
+        app: honeytrace-dashboard
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: dashboard
+          image: honeytrace-app:0.1.0
+          imagePullPolicy: IfNotPresent
+          command:
+            - python
+            - -m
+            - streamlit
+            - run
+            - src/dashboard/app.py
+            - --server.port=8501
+            - --server.address=0.0.0.0
+            - --server.headless=true
+            - --browser.gatherUsageStats=false
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          env:
+            - name: API_BASE_URL
+              value: "http://honeytrace-api:8000"
+          ports:
+            - name: http
+              containerPort: 8501
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 768Mi
+          startupProbe:
+            httpGet:
+              path: /_stcore/health
+              port: http
+            periodSeconds: 3
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /_stcore/health
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /_stcore/health
+              port: http
+            periodSeconds: 20
+            failureThreshold: 3
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+            - name: streamlit-config
+              mountPath: /home/appuser/.streamlit
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        - name: streamlit-config
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: honeytrace-dashboard
+  namespace: honeytrace
+spec:
+  type: ClusterIP
+  selector:
+    app: honeytrace-dashboard
+  ports:
+    - name: http
+      port: 8501
+      targetPort: http

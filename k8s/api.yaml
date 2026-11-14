@@ -1,0 +1,86 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: honeytrace-api
+  namespace: honeytrace
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: honeytrace-api
+  template:
+    metadata:
+      labels:
+        app: honeytrace-api
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: api
+          image: honeytrace-app:0.1.0
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          env:
+            - name: API_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: honeytrace-pg-secret
+                  key: API_DATABASE_URL
+          ports:
+            - name: http
+              containerPort: 8000
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              memory: 256Mi
+          startupProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 3
+            failureThreshold: 20
+          readinessProbe:
+            httpGet:
+              path: /health/db
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 3
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            periodSeconds: 20
+            failureThreshold: 3
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: honeytrace-api
+  namespace: honeytrace
+spec:
+  type: ClusterIP
+  selector:
+    app: honeytrace-api
+  ports:
+    - name: http
+      port: 8000
+      targetPort: http
