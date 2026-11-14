@@ -20,6 +20,10 @@ RUN pip install --no-cache-dir -r requirements.txt \
 # Application code
 COPY src/ ./src/
 
+# Streamlit theme. Read from ./ relative to the working directory, so the
+# emptyDir mounted over $HOME/.streamlit in Kubernetes does not shadow it.
+COPY .streamlit/ ./.streamlit/
+
 # Non-root user with a FIXED uid, so the Kubernetes securityContext can match it
 RUN useradd --uid 10001 --create-home --shell /usr/sbin/nologin appuser
 USER 10001
