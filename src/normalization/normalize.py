@@ -51,6 +51,7 @@ KNOWN_COLUMNS = {
     "http_method",
     "route",
     "status_code",
+    "input",
 }
 
 
@@ -134,7 +135,7 @@ def normalize_event(
     }
 
     username = safe_raw.get("username")
-    command = safe_raw.get("command")
+    command = safe_raw.get("input") or safe_raw.get("command")
     message = safe_raw.get("message")
     src_ip = safe_raw.get("src_ip")
     protocol = safe_raw.get("protocol")
