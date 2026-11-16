@@ -26,11 +26,15 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from src.dashboard.api_client import (  # noqa: E402
+    INCIDENT_STATUSES,
+    SEVERITIES,
     SOURCES,
     ApiError,
     api_base_url,
     fetch_event,
     fetch_events,
+    fetch_incident,
+    fetch_incidents,
 )
 
 DISPLAY_COLUMNS = (
@@ -52,6 +56,29 @@ COLUMN_LABELS = {
 }
 
 APPROVED_FIELD_COUNT = 13
+
+# Every 503 the incident endpoint can answer, mapped to a state the analyst can
+# act on. The key is the API's `detail` string, which the client keeps as the
+# ApiError message.
+INCIDENT_REASONS = {
+    "incidents_table_missing": (
+        "Waiting for the database migration",
+        "The detections and incidents tables do not exist yet (sql/003). "
+        "This tab starts working as soon as the migration is applied.",
+    ),
+    "incidents_not_granted": (
+        "The API role cannot read incidents",
+        "honeytrace_api has no column-level SELECT grant on incidents yet (sql/004).",
+    ),
+    "incidents_not_configured": (
+        "The incident API is not configured",
+        "The API has no database URL, so incidents cannot be read.",
+    ),
+    "incidents_unavailable": (
+        "The incident tables are not readable",
+        "The tables exist but the query failed. Check the API logs for the SQL error.",
+    ),
+}
 
 # Fixed palette so a source keeps its colour across every chart on the page.
 SOURCE_COLORS = {
@@ -187,6 +214,81 @@ CSS = """
     overflow: hidden; box-shadow: var(--ht-shadow);
   }
   div[data-testid="stDataFrame"]:hover { box-shadow: var(--ht-shadow-hover); }
+
+  /* ---------- incidents ---------- */
+  .ht-inc-table {
+    width: 100%; border-collapse: separate; border-spacing: 0;
+    background: #ffffff; border: 1px solid var(--ht-border);
+    border-radius: 14px; overflow: hidden; box-shadow: var(--ht-shadow);
+    transition: box-shadow .16s ease, border-color .16s ease;
+  }
+  .ht-inc-table:hover { box-shadow: var(--ht-shadow-hover); border-color: #cbd5e1; }
+  .ht-inc-table th {
+    font-size: 0.7rem; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.06em; color: var(--ht-muted); text-align: left;
+    padding: 0.55rem 0.85rem; background: #f8fafc;
+    border-bottom: 1px solid var(--ht-border);
+  }
+  .ht-inc-table td {
+    padding: 0.6rem 0.85rem; border-top: 1px solid #f1f5f9;
+    font-size: 0.8rem; color: var(--ht-ink); vertical-align: middle;
+  }
+  .ht-inc-table tbody tr { transition: background .14s ease; }
+  .ht-inc-table tbody tr:hover { background: #fff7ed; }
+  .ht-inc-title { font-weight: 600; }
+  .ht-inc-sub {
+    font-size: 0.72rem; color: var(--ht-muted); margin-top: 0.12rem;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    max-width: 38ch;
+  }
+  .ht-inc-mono {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: #475569; font-size: 0.76rem;
+  }
+  .ht-badge {
+    display: inline-flex; align-items: center; gap: 0.28rem;
+    font-size: 0.68rem; font-weight: 700; padding: 0.16rem 0.5rem;
+    border-radius: 999px; text-transform: capitalize; white-space: nowrap;
+    border: 1px solid transparent;
+  }
+  .ht-badge.sev-low      { background: #f1f5f9; color: #475569; border-color: #e2e8f0; }
+  .ht-badge.sev-medium   { background: #eff6ff; color: #1d4ed8; border-color: #bfdbfe; }
+  .ht-badge.sev-high     { background: #fff7ed; color: #c2410c; border-color: #fed7aa; }
+  .ht-badge.sev-critical { background: #fef2f2; color: #b91c1c; border-color: #fecaca; }
+  .ht-badge.st-open           { background: #fffbeb; color: #b45309; border-color: #fde68a; }
+  .ht-badge.st-under_review   { background: #eff6ff; color: #1d4ed8; border-color: #bfdbfe; }
+  .ht-badge.st-resolved       { background: #ecfdf5; color: #047857; border-color: #a7f3d0; }
+  .ht-badge.st-false_positive { background: #f8fafc; color: #64748b; border-color: #e2e8f0; }
+  .ht-badge.new {
+    background: var(--ht-accent-soft); color: #c2410c;
+    border-color: #fed7aa; margin-left: 0.35rem;
+  }
+  .ht-badge.new .ht-dot {
+    width: 6px; height: 6px; border-radius: 50%; background: #ea580c;
+    animation: ht-pulse 2.2s ease-out infinite;
+  }
+
+  /* ---------- incident timeline ---------- */
+  .ht-tl { display: flex; flex-direction: column; }
+  .ht-tl-row {
+    display: grid; grid-template-columns: 128px minmax(0, 1fr) 96px 90px;
+    align-items: center; gap: 0.7rem;
+    padding: 0.42rem 0.4rem; border-top: 1px solid #f1f5f9;
+    font-size: 0.78rem; transition: background .14s ease;
+  }
+  .ht-tl-row:first-child { border-top: none; }
+  .ht-tl-row:hover { background: #fff7ed; }
+  .ht-tl-time { color: var(--ht-muted); font-variant-numeric: tabular-nums; }
+  .ht-tl-type {
+    color: var(--ht-ink); font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .ht-tl-source { color: #475569; font-size: 0.74rem; }
+  .ht-tl-count {
+    color: #475569; font-size: 0.74rem; text-align: right;
+    font-variant-numeric: tabular-nums;
+  }
 
   /* ---------- detail ---------- */
   .ht-detail {
@@ -742,6 +844,209 @@ def _empty_state(title: str, body: str) -> None:
     )
 
 
+# --------------------------------------------------------------------------
+# incidents
+# --------------------------------------------------------------------------
+def _incident_badges(incident: dict) -> str:
+    severity = str(incident.get("severity") or "")
+    status_value = str(incident.get("status") or "")
+    badges = [
+        f'<span class="ht-badge sev-{html.escape(severity)}">'
+        f"{html.escape(severity)}</span>",
+        f'<span class="ht-badge st-{html.escape(status_value)}">'
+        f'{html.escape(status_value.replace("_", " "))}</span>',
+    ]
+    if incident.get("has_new_evidence"):
+        badges.append(
+            '<span class="ht-badge new"><span class="ht-dot"></span>new evidence</span>'
+        )
+    return "".join(badges)
+
+
+def _incident_metrics(items: list) -> None:
+    open_count = sum(1 for item in items if item.get("status") == "open")
+    new_count = sum(1 for item in items if item.get("has_new_evidence"))
+    urgent = sum(1 for item in items if item.get("severity") in ("high", "critical"))
+
+    col1, col2, col3, col4 = st.columns(4, gap="small")
+    col1.metric("Incidents", len(items), help="Incidents on this page")
+    col2.metric("Open", open_count, help="status = open")
+    col3.metric(
+        "New evidence", new_count, help="Not yet acknowledged by an analyst"
+    )
+    col4.metric("High or critical", urgent, help="Severity high or critical")
+
+
+def _incidents_table(items: list) -> None:
+    rows = []
+    for incident in items:
+        title = str(incident.get("title") or "-")
+        summary = str(incident.get("summary") or "")
+        rows.append(
+            "<tr>"
+            f'<td><div class="ht-inc-title">{html.escape(title)}</div>'
+            f'<div class="ht-inc-sub" title="{html.escape(summary)}">'
+            f"{html.escape(summary)}</div></td>"
+            f"<td>{_incident_badges(incident)}</td>"
+            f'<td class="ht-inc-mono">{html.escape(str(incident.get("source") or "-"))}</td>'
+            f'<td class="ht-inc-mono">{html.escape(str(incident.get("session_id") or "-"))}</td>'
+            f'<td class="ht-inc-mono">{html.escape(_short_timestamp(incident.get("updated_at")))}</td>'
+            "</tr>"
+        )
+
+    st.markdown(
+        '<table class="ht-inc-table"><thead><tr>'
+        "<th>Incident</th><th>Severity &amp; status</th><th>Source</th>"
+        "<th>Session</th><th>Updated (UTC)</th>"
+        f'</tr></thead><tbody>{"".join(rows)}</tbody></table>',
+        unsafe_allow_html=True,
+    )
+
+
+def _incident_timeline(entries: list) -> None:
+    if not entries:
+        st.caption("No timeline entries.")
+        return
+
+    rows = []
+    for entry in entries:
+        moment = _parse_timestamp(entry.get("timestamp"))
+        stamp = moment.strftime("%d %b %H:%M:%S") if moment else "-"
+        detections = len(entry.get("detection_ids") or [])
+        rows.append(
+            '<div class="ht-tl-row">'
+            f'<span class="ht-tl-time">{html.escape(stamp)}</span>'
+            f'<span class="ht-tl-type">{html.escape(str(entry.get("event_type") or "-"))}</span>'
+            f'<span class="ht-tl-source">{html.escape(str(entry.get("source") or "-"))}</span>'
+            f'<span class="ht-tl-count">{detections} detection(s)</span>'
+            "</div>"
+        )
+    st.markdown(f'<div class="ht-tl">{"".join(rows)}</div>', unsafe_allow_html=True)
+
+
+def _incident_detail(incident: dict) -> None:
+    st.markdown("#### Incident detail")
+
+    items = []
+    for name in (
+        "incident_id",
+        "source",
+        "session_id",
+        "severity",
+        "status",
+        "has_new_evidence",
+        "created_at",
+        "updated_at",
+    ):
+        value = incident.get(name)
+        shown = (
+            '<span class="ht-null">null</span>'
+            if value is None or value == ""
+            else html.escape(str(value))
+        )
+        items.append(
+            f'<div class="ht-row"><dt>{html.escape(name)}</dt><dd>{shown}</dd></div>'
+        )
+    st.markdown(
+        f'<div class="ht-detail"><dl class="ht-kv">{"".join(items)}</dl></div>',
+        unsafe_allow_html=True,
+    )
+
+    st.write("")
+    st.markdown("**Summary**")
+    st.write(str(incident.get("summary") or "-"))
+    st.caption(
+        f"{len(incident.get('detection_ids') or [])} detection(s), "
+        f"{len(incident.get('event_ids') or [])} event(s), "
+        f"{len(incident.get('missing_event_ids') or [])} missing event(s). "
+        "Timeline entries contain only public fields."
+    )
+
+    st.write("")
+    with st.container(key="panel-incident-timeline"):
+        _panel("Timeline", "Ordered as written by the correlator")
+        _incident_timeline(incident.get("timeline") or [])
+
+
+def _incidents_tab() -> None:
+    col1, col2, col3 = st.columns(3, gap="small")
+    source_choice = col1.selectbox("Source", ("all", *SOURCES), key="incident_source")
+    status_choice = col2.selectbox(
+        "Status",
+        ("all", *INCIDENT_STATUSES),
+        format_func=lambda value: "all" if value == "all" else value.replace("_", " "),
+        key="incident_status",
+    )
+    severity_choice = col3.selectbox(
+        "Severity", ("all", *SEVERITIES), key="incident_severity"
+    )
+
+    filters = {
+        "source": None if source_choice == "all" else source_choice,
+        "status": None if status_choice == "all" else status_choice,
+        "severity": None if severity_choice == "all" else severity_choice,
+    }
+
+    try:
+        page = fetch_incidents(limit=50, **filters)
+    except ApiError as exc:
+        code = str(exc)
+        title, body = INCIDENT_REASONS.get(
+            code,
+            (
+                "The incident API is not available",
+                f"The API returned {exc.status_code or 'no status'}: {code}",
+            ),
+        )
+        _empty_state(title, body)
+        if code:
+            st.caption(f"API reason: {code}")
+        return
+
+    items = page.get("items") or []
+    if not items:
+        _empty_state(
+            "No incidents yet",
+            "No detection rule has produced an incident. Incidents appear once "
+            "the engine writes a session with detections and the correlator groups "
+            "it by (source, session_id).",
+        )
+        return
+
+    _incident_metrics(items)
+    st.write("")
+    _incidents_table(items)
+    st.caption(f"{len(items)} incident(s) loaded.")
+    if page.get("next_cursor"):
+        st.caption("More incidents match. Narrow the filters to see them.")
+
+    st.write("")
+    options = [incident.get("incident_id") for incident in items]
+    labels = {
+        incident.get("incident_id"): (
+            f"{incident.get('title') or 'incident'} — {incident.get('session_id') or '-'}"
+        )
+        for incident in items
+    }
+    chosen = st.selectbox(
+        "Inspect an incident",
+        ["-", *options],
+        format_func=lambda value: "-" if value == "-" else labels.get(value, value),
+        key="incident_detail",
+    )
+    if chosen == "-":
+        return
+
+    try:
+        detail = fetch_incident(chosen)
+    except ApiError as exc:
+        _show_api_error(exc)
+        return
+
+    st.divider()
+    _incident_detail(detail)
+
+
 def main() -> None:
     st.set_page_config(page_title="HoneyTrace AI", page_icon="🍯", layout="wide")
     _inject_css()
@@ -859,11 +1164,7 @@ def main() -> None:
                     _render_detail(rows[index]["event_id"])
 
     with tab_incidents:
-        _empty_state(
-            "Incidents are not available yet",
-            "The incident API depends on the persistence layer and the evidence policy. "
-            "See docs/integration-contract-review.md.",
-        )
+        _incidents_tab()
 
 
 if __name__ == "__main__":
