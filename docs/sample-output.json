@@ -1,0 +1,215 @@
+{
+  "detections": [
+    {
+      "created_at": "2026-11-08T12:00:00+00:00",
+      "description": "Failed SSH/Telnet login attempt observed on the Cowrie honeypot.",
+      "detection_id": "1ae4e9eb5d6c6524c8eae3d724adeb7dd91b236b961e8c87a5f13c9a40951344",
+      "detector_version": "1.0.0",
+      "evidence": {
+        "event_type": "cowrie.login.failed",
+        "session_id": "real-1",
+        "src_ip": "10.0.0.9"
+      },
+      "rule_id": "COWRIE_LOGIN_FAILED",
+      "severity": "low",
+      "source_event_ids": [
+        "aa1ee410badb287cdc05aebf4c87453a1cd32f1c2eff75b67ae9bfa55ee8c7b7"
+      ]
+    },
+    {
+      "created_at": "2026-11-08T12:00:00+00:00",
+      "description": "Failed SSH/Telnet login attempt observed on the Cowrie honeypot.",
+      "detection_id": "43c29b827f7affdc7b8c5f897d55e938252f9f5602799ff2dac9941e4e50d9cc",
+      "detector_version": "1.0.0",
+      "evidence": {
+        "event_type": "cowrie.login.failed",
+        "session_id": "real-1",
+        "src_ip": "10.0.0.9"
+      },
+      "rule_id": "COWRIE_LOGIN_FAILED",
+      "severity": "low",
+      "source_event_ids": [
+        "5d6a9e570a767c788fd589e41d2c44e6778f0d62864ef1502b5572093902d1cc"
+      ]
+    },
+    {
+      "created_at": "2026-11-08T12:00:00+00:00",
+      "description": "Repeated failed logins within a single Cowrie session.",
+      "detection_id": "4f3ecf55b447f543f85e913fcf8bf9616faff028d14785c52358db45b98096b0",
+      "detector_version": "1.0.0",
+      "evidence": {
+        "count": 5,
+        "first_event_at": "2026-10-28T10:00:00+00:00",
+        "last_event_at": "2026-10-28T10:00:04+00:00",
+        "session_id": "real-1",
+        "src_ip": "10.0.0.9",
+        "window_seconds": 60
+      },
+      "rule_id": "COWRIE_BRUTE_FORCE_SESSION",
+      "severity": "medium",
+      "source_event_ids": [
+        "470b5f71af2285dead38e2a538175d0b99e057b3950ffd2dc18e92230c22a897",
+        "ee127079433fa6304a2d739ba967fe22e91e34cf39a207ee12f806115f4feb75",
+        "955271ead78b3b6ed381ffc6e26bed1cae2418c904479c0631c011d7c84d6671",
+        "aa1ee410badb287cdc05aebf4c87453a1cd32f1c2eff75b67ae9bfa55ee8c7b7",
+        "5d6a9e570a767c788fd589e41d2c44e6778f0d62864ef1502b5572093902d1cc"
+      ]
+    },
+    {
+      "created_at": "2026-11-08T12:00:00+00:00",
+      "description": "Failed SSH/Telnet login attempt observed on the Cowrie honeypot.",
+      "detection_id": "52e9a12afb4e0eefe94835267dea75b0c6b84035107b7e8f9ba68849727b0f95",
+      "detector_version": "1.0.0",
+      "evidence": {
+        "event_type": "cowrie.login.failed",
+        "session_id": "real-1",
+        "src_ip": "10.0.0.9"
+      },
+      "rule_id": "COWRIE_LOGIN_FAILED",
+      "severity": "low",
+      "source_event_ids": [
+        "470b5f71af2285dead38e2a538175d0b99e057b3950ffd2dc18e92230c22a897"
+      ]
+    },
+    {
+      "created_at": "2026-11-08T12:00:00+00:00",
+      "description": "Failed SSH/Telnet login attempt observed on the Cowrie honeypot.",
+      "detection_id": "9c912b8d70417dafb06182dc0c1a04638903c1961177f35b04837d307617fac7",
+      "detector_version": "1.0.0",
+      "evidence": {
+        "event_type": "cowrie.login.failed",
+        "session_id": "real-1",
+        "src_ip": "10.0.0.9"
+      },
+      "rule_id": "COWRIE_LOGIN_FAILED",
+      "severity": "low",
+      "source_event_ids": [
+        "ee127079433fa6304a2d739ba967fe22e91e34cf39a207ee12f806115f4feb75"
+      ]
+    },
+    {
+      "created_at": "2026-11-08T12:00:00+00:00",
+      "description": "Failed SSH/Telnet login attempt observed on the Cowrie honeypot.",
+      "detection_id": "da4c0f862f849d2cffea6549f55c6641a170710b1f8012f042358135fa786753",
+      "detector_version": "1.0.0",
+      "evidence": {
+        "event_type": "cowrie.login.failed",
+        "session_id": "real-1",
+        "src_ip": "10.0.0.9"
+      },
+      "rule_id": "COWRIE_LOGIN_FAILED",
+      "severity": "low",
+      "source_event_ids": [
+        "955271ead78b3b6ed381ffc6e26bed1cae2418c904479c0631c011d7c84d6671"
+      ]
+    },
+    {
+      "created_at": "2026-11-08T12:00:00+00:00",
+      "description": "Command using a download tool (possible payload retrieval).",
+      "detection_id": "fdeed66adaa6a3cc1d11a46209d2fd18b13b1c872e265928bb4950c5cc64f97c",
+      "detector_version": "1.0.0",
+      "evidence": {
+        "event_type": "cowrie.command.input",
+        "session_id": "real-1",
+        "src_ip": "10.0.0.9"
+      },
+      "rule_id": "COWRIE_CMD_DOWNLOAD_TOOL",
+      "severity": "medium",
+      "source_event_ids": [
+        "32781c6d27979d914f3f0d3384b0c35a690def0632ad05759658a7a754cdb055"
+      ]
+    }
+  ],
+  "incidents": [
+    {
+      "created_at": "2026-11-08T12:00:00+00:00",
+      "detection_ids": [
+        "1ae4e9eb5d6c6524c8eae3d724adeb7dd91b236b961e8c87a5f13c9a40951344",
+        "43c29b827f7affdc7b8c5f897d55e938252f9f5602799ff2dac9941e4e50d9cc",
+        "4f3ecf55b447f543f85e913fcf8bf9616faff028d14785c52358db45b98096b0",
+        "52e9a12afb4e0eefe94835267dea75b0c6b84035107b7e8f9ba68849727b0f95",
+        "9c912b8d70417dafb06182dc0c1a04638903c1961177f35b04837d307617fac7",
+        "da4c0f862f849d2cffea6549f55c6641a170710b1f8012f042358135fa786753",
+        "fdeed66adaa6a3cc1d11a46209d2fd18b13b1c872e265928bb4950c5cc64f97c"
+      ],
+      "event_ids": [
+        "470b5f71af2285dead38e2a538175d0b99e057b3950ffd2dc18e92230c22a897",
+        "ee127079433fa6304a2d739ba967fe22e91e34cf39a207ee12f806115f4feb75",
+        "955271ead78b3b6ed381ffc6e26bed1cae2418c904479c0631c011d7c84d6671",
+        "aa1ee410badb287cdc05aebf4c87453a1cd32f1c2eff75b67ae9bfa55ee8c7b7",
+        "5d6a9e570a767c788fd589e41d2c44e6778f0d62864ef1502b5572093902d1cc",
+        "32781c6d27979d914f3f0d3384b0c35a690def0632ad05759658a7a754cdb055"
+      ],
+      "incident_id": "9259e74e52c45c3b04a5e9dbb45057e06427c9daa8430a21aaca74ae5d6de6b6",
+      "missing_event_ids": [],
+      "session_id": "real-1",
+      "severity": "medium",
+      "source": "cowrie",
+      "status": "open",
+      "summary": "7 detection(s) (COWRIE_BRUTE_FORCE_SESSION, COWRIE_CMD_DOWNLOAD_TOOL, COWRIE_LOGIN_FAILED) linked by session over 6 event(s).",
+      "timeline": [
+        {
+          "detection_ids": [
+            "4f3ecf55b447f543f85e913fcf8bf9616faff028d14785c52358db45b98096b0",
+            "52e9a12afb4e0eefe94835267dea75b0c6b84035107b7e8f9ba68849727b0f95"
+          ],
+          "event_id": "470b5f71af2285dead38e2a538175d0b99e057b3950ffd2dc18e92230c22a897",
+          "event_type": "cowrie.login.failed",
+          "source": "cowrie",
+          "timestamp": "2026-10-28T10:00:00+00:00"
+        },
+        {
+          "detection_ids": [
+            "4f3ecf55b447f543f85e913fcf8bf9616faff028d14785c52358db45b98096b0",
+            "9c912b8d70417dafb06182dc0c1a04638903c1961177f35b04837d307617fac7"
+          ],
+          "event_id": "ee127079433fa6304a2d739ba967fe22e91e34cf39a207ee12f806115f4feb75",
+          "event_type": "cowrie.login.failed",
+          "source": "cowrie",
+          "timestamp": "2026-10-28T10:00:01+00:00"
+        },
+        {
+          "detection_ids": [
+            "4f3ecf55b447f543f85e913fcf8bf9616faff028d14785c52358db45b98096b0",
+            "da4c0f862f849d2cffea6549f55c6641a170710b1f8012f042358135fa786753"
+          ],
+          "event_id": "955271ead78b3b6ed381ffc6e26bed1cae2418c904479c0631c011d7c84d6671",
+          "event_type": "cowrie.login.failed",
+          "source": "cowrie",
+          "timestamp": "2026-10-28T10:00:02+00:00"
+        },
+        {
+          "detection_ids": [
+            "1ae4e9eb5d6c6524c8eae3d724adeb7dd91b236b961e8c87a5f13c9a40951344",
+            "4f3ecf55b447f543f85e913fcf8bf9616faff028d14785c52358db45b98096b0"
+          ],
+          "event_id": "aa1ee410badb287cdc05aebf4c87453a1cd32f1c2eff75b67ae9bfa55ee8c7b7",
+          "event_type": "cowrie.login.failed",
+          "source": "cowrie",
+          "timestamp": "2026-10-28T10:00:03+00:00"
+        },
+        {
+          "detection_ids": [
+            "43c29b827f7affdc7b8c5f897d55e938252f9f5602799ff2dac9941e4e50d9cc",
+            "4f3ecf55b447f543f85e913fcf8bf9616faff028d14785c52358db45b98096b0"
+          ],
+          "event_id": "5d6a9e570a767c788fd589e41d2c44e6778f0d62864ef1502b5572093902d1cc",
+          "event_type": "cowrie.login.failed",
+          "source": "cowrie",
+          "timestamp": "2026-10-28T10:00:04+00:00"
+        },
+        {
+          "detection_ids": [
+            "fdeed66adaa6a3cc1d11a46209d2fd18b13b1c872e265928bb4950c5cc64f97c"
+          ],
+          "event_id": "32781c6d27979d914f3f0d3384b0c35a690def0632ad05759658a7a754cdb055",
+          "event_type": "cowrie.command.input",
+          "source": "cowrie",
+          "timestamp": "2026-10-28T10:01:00+00:00"
+        }
+      ],
+      "title": "Suspicious activity in session real-1",
+      "updated_at": "2026-11-08T12:00:00+00:00"
+    }
+  ]
+}
