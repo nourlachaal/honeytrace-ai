@@ -232,3 +232,16 @@ For controlled experiments, use explicit `scenario_id` or `test_run_id` mappings
 3. Review Git changes to ensure no secrets or raw logs are staged.
 4. Integrate the schema with the detection and API/dashboard components.
 5. Test the complete pipeline using controlled, documented test runs.
+
+
+## Dependencies
+
+- `requirements.txt`: API, dashboard and the detection/correlation engine.
+- `requirements-ml.txt`: only for `src/ml/` (Isolation Forest, DBSCAN, comparison).
+
+```bash
+pip install -r requirements.txt                          # API, dashboard, engine
+pip install -r requirements.txt -r requirements-ml.txt   # plus the ML comparison
+```
+
+ML tests are skipped automatically when scikit-learn is not installed.

@@ -1,11 +1,13 @@
 # Rapport d'évaluation : détection par règles, Isolation Forest et DBSCAN
 
 **Statut : brouillon. Aucun résultat réel n'est encore disponible.**
+
 Les chiffres de la section 5 viennent de données synthétiques et ne mesurent aucune performance réelle.
 
 ## 1. Objectif
 
 Comparer trois approches pour repérer des sessions suspectes sur des événements normalisés :
+
 1. détection par règles (avec corrélation en incidents) ;
 2. Isolation Forest (non supervisé) ;
 3. DBSCAN (regroupement exploratoire).
@@ -13,6 +15,7 @@ Comparer trois approches pour repérer des sessions suspectes sur des événemen
 ## 2. Unité d'évaluation
 
 La **session**, identifiée par `(source, session_id)`.
+
 - Les événements Juice Shop n'ont pas de `session_id` (le log Nginx ne contient que 6 champs). Ils ne sont **pas évalués** ici.
 - Une adresse IP n'est jamais utilisée pour relier des événements.
 
@@ -29,7 +32,9 @@ La **session**, identifiée par `(source, session_id)`.
 ## 4. Métriques
 
 Precision = TP / (TP + FP) ; Recall = TP / (TP + FN) ;
+
 F1 = 2TP / (2TP + FP + FN) ; FPR = FP / (FP + TN).
+
 Une métrique à dénominateur nul est notée **n/a** (jamais 0). Les formules sont vérifiées par des tests calculés à la main et par comparaison avec scikit-learn.
 
 ## 5. Résultats
@@ -42,6 +47,7 @@ Une métrique à dénominateur nul est notée **n/a** (jamais 0). Les formules s
 | Isolation Forest | 31 | 13 | 14 | 242 | 0,705 | 0,689 | 0,697 | 0,051 |
 
 300 sessions, 45 attaques (15 %), graines 1 (entraînement) et 2 (test).
+
 **Ces chiffres dépendent entièrement du générateur que nous avons écrit. Ils ne doivent pas être cités comme des performances.**
 
 ### 5.2 Données réelles (scénarios de Person 1)
@@ -51,6 +57,7 @@ Une métrique à dénominateur nul est notée **n/a** (jamais 0). Les formules s
 ## 6. Analyse
 
 À COMPLÉTER avec les résultats réels. Points à traiter :
+
 - faux positifs des règles (quelle règle, quelles sessions) ;
 - faux négatifs (quelles attaques sont ratées, pourquoi) ;
 - sessions signalées par Isolation Forest qui ne sont pas des attaques : une anomalie n'est pas une attaque ;
@@ -66,13 +73,15 @@ Une métrique à dénominateur nul est notée **n/a** (jamais 0). Les formules s
 6. **Logs Nginx** : `route` sans query string, pas de corps de requête, IP possiblement celle de la passerelle.
 7. **Champ de commande** : à vérifier sur de vrais logs (`input` ou `command`).
 8. **Unité unique** : l'évaluation par événement ou par scénario n'est pas faite.
+9. **IP uniforme dans le laboratoire** : toutes les sessions du laboratoire ont la même `src_ip` (passerelle Docker, confirmé par Person 1). Aucune règle ni feature n'utilise l'IP, donc l'évaluation n'est pas affectée, mais `src_ip` n'a aucune valeur analytique sur ces données.
 
 ## 8. Reproductibilité
 
-```
+```bash
 python -m pytest -q
 python -m src.ml.compare_methods
 ```
+
 Graines fixes, entrées triées, résultats déterministes.
 
 ## 9. Conclusion
