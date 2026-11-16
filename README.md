@@ -18,10 +18,11 @@ The collection, storage, read-only API and dashboard are implemented and tested.
 - Incident API over the detection/correlation tables, with typed 503 reasons
 - Kubernetes manifests for PostgreSQL, the API and the dashboard
 
-**Current verification:** 91 automated tests pass with `-m "not db"`; 35 additional
-database-marked tests run when PostgreSQL and the migrations are available. The
-dashboard and API are exercised against the HTTP contract, so the suite does not
-need a live database to catch field leaks or broken rendering.
+**Current verification:** 240 automated tests pass with `-m "not db"`, with 4 ML
+tests skipped when scikit-learn is not installed; 35 additional database-marked
+tests run when PostgreSQL and the migrations are available. The dashboard and API
+are exercised against the HTTP contract, so the suite does not need a live
+database to catch field leaks or broken rendering.
 
 ## Architecture
 
@@ -52,12 +53,20 @@ honeytrace-ai/
 │   │   ├── cowrie/
 │   │   └── juice-shop/
 │   ├── fixtures/
-│   │   ├── cowrie/
-│   │   └── juice-shop/
+│   │   └── cowrie/
+│   │       └── sample_anonymized.jsonl
+│   ├── labels/
+│   │   └── session_labels.csv
+│   ├── manifests/
+│   │   └── replay_manifest.csv
 │   └── quarantine/
 ├── docker/
 │   └── initdb/
 │       └── 003_set_api_role_password.sh
+├── scripts/
+│   ├── anonymize_cowrie_sample.py
+│   ├── build_labels.py
+│   └── replay_cowrie_session.py
 ├── src/
 │   ├── api/
 │   │   ├── main.py
@@ -69,9 +78,23 @@ honeytrace-ai/
 │   ├── collectors/
 │   │   ├── cowrie_collector.py
 │   │   └── juice_shop_collector.py
+│   ├── correlation/
+│   │   ├── correlator.py
+│   │   ├── export.py
+│   │   └── timeline.py
 │   ├── dashboard/
 │   │   ├── app.py
 │   │   └── api_client.py
+│   ├── detection/
+│   │   ├── engine.py
+│   │   └── rules.py
+│   ├── ml/
+│   │   ├── compare_methods.py
+│   │   ├── dbscan.py
+│   │   ├── features.py
+│   │   ├── isolation_forest.py
+│   │   ├── metrics.py
+│   │   └── synthetic.py
 │   ├── normalization/
 │   │   └── normalize.py
 │   └── storage/
@@ -79,7 +102,9 @@ honeytrace-ai/
 │       └── check_connection.py
 ├── sql/
 │   ├── 001_create_security_events.sql
-│   └── 002_create_api_readonly_role.sql
+│   ├── 002_create_api_readonly_role.sql
+│   ├── 003_create_detections_incidents.sql
+│   └── 004_api_detection_incident_grants.sql
 ├── k8s/
 │   ├── namespace.yaml
 │   ├── postgres.yaml
@@ -92,21 +117,41 @@ honeytrace-ai/
 │   ├── test_api_field_contract.py
 │   ├── test_api_health.py
 │   ├── test_api_health_db.py
+│   ├── test_compare_methods.py
+│   ├── test_correlation.py
 │   ├── test_cowrie_collector.py
 │   ├── test_dashboard_app.py
 │   ├── test_dashboard_client.py
+│   ├── test_dbscan.py
+│   ├── test_detection_engine.py
+│   ├── test_detection_grouping.py
+│   ├── test_detection_rules_extra.py
+│   ├── test_detection_sequences.py
+│   ├── test_detection_thresholds.py
+│   ├── test_export.py
 │   ├── test_incident_field_contract.py
+│   ├── test_incident_id.py
 │   ├── test_incident_schema.py
+│   ├── test_incident_timeline.py
+│   ├── test_isolation_forest.py
 │   ├── test_juice_shop_collector.py
-│   └── test_normalize.py
+│   ├── test_ml_evaluation.py
+│   ├── test_normalize.py
+│   ├── test_session_features.py
+│   └── test_synthetic.py
 ├── docs/
 │   ├── api-field-policy.md
-│   └── event-schema.md
+│   ├── evaluation-report.md
+│   ├── event-schema.md
+│   ├── integration-contract.md
+│   ├── person1-work.md
+│   └── sample-output.json
 ├── docker-compose.yml
 ├── Dockerfile
 ├── .env.example
 ├── .gitignore
 ├── requirements.txt
+├── requirements-ml.txt
 └── README.md
 ```
 
@@ -261,9 +306,10 @@ Run the suite that needs no database:
 python -m pytest tests/ -q -m "not db"
 ```
 
-Expected: `91 passed`. These tests cover normalization, collector behavior, the
-API health, events and event-detail endpoints, the incident field contract, and
-the dashboard's HTTP client and rendering.
+Expected: `240 passed, 4 skipped` (the ML tests skip without scikit-learn). These
+tests cover normalization, collector behavior, the API health, events and
+event-detail endpoints, the incident field contract, detection rules and
+correlation, and the dashboard's HTTP client and rendering.
 
 Database-marked tests check the real schema and grants. They require PostgreSQL
 with `sql/001` and `sql/002` applied, plus the incident migrations when present:
@@ -296,10 +342,10 @@ Important fields include:
 See `docs/event-schema.md` for the detailed schema.
 
 The detection and correlation stages write two further tables, `detections` and
-`incidents`, which the incident API reads through column-level grants. Their
-migrations are owned by the data-pipeline workstream and are not yet in this
-repository; until they land, `GET /incidents` answers
-`503 incidents_table_missing` and the dashboard shows that reason.
+`incidents`, created by `sql/003` and granted to the API role by `sql/004`. The
+API reads them through column-level grants only. Until the persistence writer
+exists, `GET /incidents` answers `200 {"items": []}` on an empty database, and
+the dashboard explains the exact 503 reason if a grant or table is missing.
 
 ## Data Quality and Security
 
@@ -316,9 +362,9 @@ For controlled experiments, use explicit `scenario_id` or `test_run_id` mappings
 
 ## Current Limitations
 
-- The incident tables (`detections`, `incidents`) and the persistence writer are
-  not in this repository yet, so the incident API is implemented and tested but
-  not yet populated with real data.
+- The persistence writer and batch runner are not in this repository yet, so the
+  incident tables are empty and the incident API returns an empty page rather
+  than real incidents.
 - Incidents are Cowrie-only. Juice Shop events have no `session_id`, so they
   produce detections but cannot be correlated into an incident. IP-based
   correlation is deliberately not used.
@@ -330,10 +376,22 @@ For controlled experiments, use explicit `scenario_id` or `test_run_id` mappings
 
 ## Next Steps
 
-1. Land the `detections` and `incidents` migrations and the persistence writer,
-   then run the engine end to end on real Cowrie data.
+1. Run the persistence writer and batch entry point end to end on the real
+   Cowrie sample, then record the evidence in the evaluation report.
 2. Expand tests for duplicate imports, invalid timestamps, and sensitive-field redaction.
 3. Complete and review the event schema documentation.
 4. Review Git changes to ensure no secrets or raw logs are staged.
-5. Run the complete pipeline against controlled, documented test runs and record
-   the evidence in the evaluation report.
+5. Run the complete pipeline against controlled, documented test runs.
+
+
+## Dependencies
+
+- `requirements.txt`: API, dashboard and the detection/correlation engine.
+- `requirements-ml.txt`: only for `src/ml/` (Isolation Forest, DBSCAN, comparison).
+
+```bash
+pip install -r requirements.txt                          # API, dashboard, engine
+pip install -r requirements.txt -r requirements-ml.txt   # plus the ML comparison
+```
+
+ML tests are skipped automatically when scikit-learn is not installed.
