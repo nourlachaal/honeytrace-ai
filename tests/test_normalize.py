@@ -91,3 +91,14 @@ def test_nested_sensitive_fields_are_redacted():
     assert result["raw_event"]["metadata"]["nested"]["token"] == "[REDACTED]"
     assert "example-secret" not in str(result)
     assert "example-token" not in str(result)
+def test_cowrie_command_input_is_normalized():
+    raw_event = {
+        "eventid": "cowrie.command.input",
+        "timestamp": "2026-11-09T12:00:00Z",
+        "session": "test-session-001",
+        "input": "whoami",
+    }
+    normalized = normalize_event(raw_event, source="cowrie")
+    assert normalized["event_type"] == "cowrie.command.input"
+    assert normalized["command"] == "whoami"
+    assert "input" not in normalized["metadata"]
