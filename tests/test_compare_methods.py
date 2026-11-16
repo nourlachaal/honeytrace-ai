@@ -1,5 +1,5 @@
 import pytest
-
+pytest.importorskip("sklearn")
 from src.ml.compare_methods import (
     SYNTHETIC_WARNING,
     compare_methods,

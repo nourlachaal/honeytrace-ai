@@ -1,5 +1,5 @@
 import pytest
-
+pytest.importorskip("sklearn")
 from src.ml.dbscan import (
     MIN_SESSIONS,
     NOISE,

@@ -5,5 +5,3 @@ fastapi>=0.100
 uvicorn[standard]>=0.23
 httpx2>=2.0
 streamlit>=1.60
-numpy>=2.0
-scikit-learn>=1.5
