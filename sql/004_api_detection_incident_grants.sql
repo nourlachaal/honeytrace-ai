@@ -19,7 +19,7 @@ GRANT SELECT (
     incident_id, source, session_id, title, summary, severity, status,
     has_new_evidence, detection_ids, event_ids, timeline, created_at, updated_at
 ) ON incidents TO honeytrace_api;
-
+GRANT SELECT (missing_event_ids) ON incidents TO honeytrace_api;
 -- The API role stays read-only: no INSERT, UPDATE or DELETE.
 -- When the API gets an analyst "change status" endpoint, give it its own
 -- narrow grant, e.g. GRANT UPDATE (status, has_new_evidence) ON incidents ...
