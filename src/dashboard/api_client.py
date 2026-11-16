@@ -19,6 +19,11 @@ DEFAULT_TIMEOUT_SECONDS = 10.0
 
 SOURCES = ("cowrie", "juice_shop")
 
+# Mirrors the API's Literal types. Duplicated on purpose: the dashboard talks to
+# the API over HTTP, so it must not import the API's internal modules.
+INCIDENT_STATUSES = ("open", "under_review", "resolved", "false_positive")
+SEVERITIES = ("low", "medium", "high", "critical")
+
 
 class ApiError(RuntimeError):
     """The API could not be reached, or returned an error response."""
@@ -127,5 +132,76 @@ def fetch_event(
     payload = _get_json(url, timeout=timeout)
 
     if not isinstance(payload, dict) or "event_id" not in payload:
+        raise ApiError("unexpected_response")
+    return payload
+
+
+def build_incidents_url(
+    *,
+    base_url: str | None = None,
+    limit: int = 50,
+    cursor: str | None = None,
+    source: str | None = None,
+    status: str | None = None,
+    severity: str | None = None,
+) -> str:
+    """Build the /incidents URL. Only non-empty filters are sent."""
+    params: dict[str, Any] = {"limit": limit}
+    if cursor:
+        params["cursor"] = cursor
+    if source:
+        params["source"] = source
+    if status:
+        params["status"] = status
+    if severity:
+        params["severity"] = severity
+
+    root = (base_url or api_base_url()).rstrip("/")
+    return f"{root}/incidents?{urllib.parse.urlencode(params)}"
+
+
+def fetch_incidents(
+    *,
+    base_url: str | None = None,
+    limit: int = 50,
+    cursor: str | None = None,
+    source: str | None = None,
+    status: str | None = None,
+    severity: str | None = None,
+    timeout: float = DEFAULT_TIMEOUT_SECONDS,
+) -> dict[str, Any]:
+    """Fetch one page of incidents.
+
+    Raises ApiError with status 503 while the tables are missing. The message is
+    the API's detail string: incidents_table_missing, incidents_not_granted,
+    incidents_unavailable or incidents_not_configured.
+    """
+    url = build_incidents_url(
+        base_url=base_url,
+        limit=limit,
+        cursor=cursor,
+        source=source,
+        status=status,
+        severity=severity,
+    )
+    payload = _get_json(url, timeout=timeout)
+
+    if not isinstance(payload, dict) or "items" not in payload:
+        raise ApiError("unexpected_response")
+    return payload
+
+
+def fetch_incident(
+    incident_id: str,
+    *,
+    base_url: str | None = None,
+    timeout: float = DEFAULT_TIMEOUT_SECONDS,
+) -> dict[str, Any]:
+    """Fetch one incident by id. Raises ApiError with status 404 when unknown."""
+    root = (base_url or api_base_url()).rstrip("/")
+    url = f"{root}/incidents/{urllib.parse.quote(incident_id, safe='')}"
+    payload = _get_json(url, timeout=timeout)
+
+    if not isinstance(payload, dict) or "incident_id" not in payload:
         raise ApiError("unexpected_response")
     return payload
