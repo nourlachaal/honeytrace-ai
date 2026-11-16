@@ -1,6 +1,7 @@
 # HoneyTrace AI — Detection and Incident Integration Contract
 
 **Status:** Proposal, pending validation by Person 1 and Person 3. Reviewed by Person 3 (PR #4); the decisions of that review are applied below.
+
 Field names reflect `docs/sample-output.json`, produced by the code on branch `feature/detection-ml`. The code is tested and is the reference.
 
 ## 1. Existing event source
@@ -27,6 +28,7 @@ A detection is a finding produced by one rule. It is a signal, not a confirmed a
 | `created_at` | ISO 8601 UTC | Time the detection was produced by the engine. |
 
 Notes:
+
 - `detector_version` is a separate field. It is NOT part of `detection_id`, so changing a rule does not create duplicate detections.
 - Reprocessing the same events yields the same `detection_id`.
 - There is no `confidence` field: rules have no computed confidence, so none is invented.
@@ -51,9 +53,10 @@ An incident groups the detections of one verified session. Events are linked onl
 | `event_ids` | list of string | Events of the session, in chronological order. |
 | `missing_event_ids` | list of string | Events cited by a detection but absent from the analysed batch. This does NOT prove that an event was deleted. |
 | `timeline` | list of object | Chronological entries: `timestamp`, `event_id`, `event_type`, `source`, `detection_ids`. |
-| `has_new_evidence` | boolean | Computed at persistence time, not by the in-memory engine. `true` when detections were linked to an incident whose status is `resolved` or `false_positive` after that status was set. Reset to `false` when an analyst changes the status. |
+| `has_new_evidence` | boolean | Engine-owned. The writer only ever sets it to `true`, when new detections are linked to an incident whose status is `resolved` or `false_positive`. It never sets it to `false`. An analyst clears it in the same UPDATE that changes `status`. |
 
 Notes:
+
 - By default an incident is created only when its severity is `medium` or higher.
 - Juice Shop events have no `session_id` (the Nginx log has no session identifier), so they produce detections but no incidents.
 - Detections and incidents use different names on purpose: `source_event_ids` for detections, `event_ids` for incidents.
@@ -67,7 +70,8 @@ The engine owns the evidence: detections, events, timeline, severity, summary, `
 - A `resolved` incident is NOT reopened automatically. New evidence sets `has_new_evidence = true`.
 - A `false_positive` incident keeps its status. New evidence sets the same flag.
 - Severity is the maximum over linked detections and is monotonic: it can rise, never fall.
-- `has_new_evidence` is reset to `false` only when an analyst changes `status`.
+- `has_new_evidence` is only ever set to `true` by the writer and only cleared by the analyst's own UPDATE, for example: `UPDATE incidents SET status = 'under_review', has_new_evidence = false WHERE incident_id = '...';`
+- Acknowledging an incident means setting `status = 'under_review'`.
 - Detections are never deleted.
 
 ## 5. Proposed persistence (Person 1 owns the migration, Person 3 reviews)
@@ -97,7 +101,7 @@ These are proposals only. Person 1 decides the final schema (link tables, indexe
 | `title`, `summary` | text NOT NULL | |
 | `severity` | text NOT NULL | CHECK as above |
 | `status` | text NOT NULL DEFAULT `open` | CHECK in (`open`,`under_review`,`resolved`,`false_positive`). Never overwritten by the engine. |
-| `has_new_evidence` | boolean NOT NULL DEFAULT false | Engine-owned. Set when new detections arrive on a `resolved` or `false_positive` incident. |
+| `has_new_evidence` | boolean NOT NULL DEFAULT false | Engine-owned. Only set to `true` by the writer (new detections on a `resolved` or `false_positive` incident), cleared only by the analyst's UPDATE. |
 | `detection_ids`, `event_ids`, `missing_event_ids` | text[] | or link tables |
 | `timeline` | jsonb | or rebuilt from `security_events` |
 | `created_at`, `updated_at` | timestamptz NOT NULL | |
@@ -115,7 +119,7 @@ The upsert of an incident updates only engine-owned columns (`severity`, `summar
 
 - Juice Shop routes come from `$uri`, so the query string and the body are not visible to the rules.
 - Cowrie command rules read `command`, then `metadata["input"]`. The real field name is to be confirmed by Person 1 on an anonymized sample.
-
+- In the lab, every session has the same `src_ip` (Docker gateway). It carries no analytical value and is never used for grouping or features.
 ## 8. Decisions requiring team confirmation
 
 - Final schema, constraints and migration owner (section 5).
