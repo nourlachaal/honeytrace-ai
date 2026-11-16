@@ -1,7 +1,8 @@
 """Build the session label CSV from the replay manifest and PostgreSQL.
 
 For each COMPLETED manifest run, find the Cowrie session whose first event
-falls inside the run's time window and that contains at least one
+falls within a few seconds of the run's START (runs are at least 10 s apart,
+so these windows cannot overlap) and that contains at least one
 cowrie.command.input event. Runs that match zero or several sessions are
 skipped with a warning, never guessed. Existing rows in the output file are kept.
 
@@ -46,15 +47,16 @@ def main() -> None:
                 rows[row["session_id"]] = row
 
     added = skipped = 0
-    margin = timedelta(seconds=1)
+    claimed: set[str] = set()
     with psycopg.connect(os.environ["DATABASE_URL"]) as connection, \
             args.manifest.open(newline="", encoding="utf-8") as manifest:
         for run in csv.DictReader(manifest):
             if run["status"] != "completed":
                 skipped += 1
                 continue
-            start = datetime.fromisoformat(run["started_utc"]) - margin
-            end = datetime.fromisoformat(run["ended_utc"]) + margin
+            started = datetime.fromisoformat(run["started_utc"])
+            start = started - timedelta(seconds=1)
+            end = started + timedelta(seconds=5)
             with connection.cursor() as cursor:
                 cursor.execute(QUERY, (start, end))
                 sessions = [r[0] for r in cursor.fetchall()]
@@ -63,6 +65,12 @@ def main() -> None:
                       f"{len(sessions)} matching sessions, skipped")
                 skipped += 1
                 continue
+            if sessions[0] in claimed:
+                print(f"WARNING {run['scenario_id']} {run['started_utc']}: "
+                      f"session {sessions[0]} already used by another run, skipped")
+                skipped += 1
+                continue
+            claimed.add(sessions[0])
             rows[sessions[0]] = {
                 "source": "cowrie", "session_id": sessions[0],
                 "label": run["label"], "scenario_id": run["scenario_id"],
@@ -80,4 +88,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-    
