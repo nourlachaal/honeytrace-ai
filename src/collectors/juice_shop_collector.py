@@ -9,7 +9,6 @@ from typing import Any
 from src.normalization.normalize import normalize_event
 from src.storage.postgres import insert_events
 
-
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_LOG_FILE = PROJECT_ROOT / "data" / "raw" / "juice-shop" / "access.jsonl"
 QUARANTINE_FILE = (
