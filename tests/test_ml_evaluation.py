@@ -1,6 +1,9 @@
 import random
 
 import pytest
+
+pytest.importorskip("sklearn")
+
 from sklearn.metrics import f1_score, precision_score, recall_score
 
 from src.detection.engine import DetectionEngine

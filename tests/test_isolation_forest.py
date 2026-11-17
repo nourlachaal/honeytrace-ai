@@ -1,5 +1,5 @@
 import pytest
-
+pytest.importorskip("sklearn")
 from src.ml.features import FEATURE_NAMES, SessionFeatures, build_session_features
 from src.ml.isolation_forest import MIN_SESSIONS, SessionAnomalyDetector
 from src.ml.synthetic import generate_dataset
