@@ -277,7 +277,7 @@ def test_api_role_cannot_select_evidence_internal_on_detections(
                 cursor.execute("SELECT evidence_internal FROM detections LIMIT 0")
 
 
-@pytest.mark.parametrize("table", ["incidents", "detections"])
+@pytest.mark.parametrize("table", ["detections"])
 def test_api_role_cannot_select_every_column(
     api_connection: psycopg.Connection, table: str
 ) -> None:
@@ -285,7 +285,13 @@ def test_api_role_cannot_select_every_column(
         with pytest.raises(errors.InsufficientPrivilege):
             with api_connection.cursor() as cursor:
                 cursor.execute(f"SELECT * FROM {table} LIMIT 0")
-
+@pytest.mark.parametrize("table", ["incidents", "detections"])
+def test_api_role_has_no_table_level_select(api_connection, table):
+    with api_connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT has_table_privilege(current_user, %s, 'SELECT')", (table,)
+        )
+        assert cursor.fetchone()[0] is False
 
 @pytest.mark.parametrize(
     "statement",
