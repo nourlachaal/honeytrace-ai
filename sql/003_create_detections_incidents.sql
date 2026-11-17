@@ -68,10 +68,11 @@ CREATE INDEX IF NOT EXISTS idx_detections_created
 CREATE INDEX IF NOT EXISTS idx_detections_rule
     ON detections (rule_id);
 
--- Pagination key proposed in the incident API proposal. The sort key is still
--- an open decision: drop this index if the team picks another one.
-CREATE INDEX IF NOT EXISTS idx_incidents_created
-    ON incidents (created_at DESC, incident_id DESC);
+-- The incident API lists incidents ORDER BY updated_at DESC, incident_id DESC
+-- (src/api/incidents.py), so the index follows that key.
+DROP INDEX IF EXISTS idx_incidents_created;
+CREATE INDEX IF NOT EXISTS idx_incidents_updated
+    ON incidents (updated_at DESC, incident_id DESC);
 
 -- Detections are append-only (contract section 2): inserted with
 -- ON CONFLICT DO NOTHING, never updated, never deleted.
