@@ -1,508 +1,1425 @@
-# HoneyTrace AI
+# 🍯 HoneyTrace AI
 
-HoneyTrace AI is a cybersecurity platform that collects, normalizes and stores
-security events from controlled honeypot and web-application environments,
-detects suspicious behaviour with explicit rules, correlates detections into
-incidents, exposes everything through a read-only API, and visualizes it in a
-Streamlit dashboard. An advisory Isolation Forest model scores sessions for
-anomalies but never changes a detection or an incident on its own.
+**HoneyTrace AI** is a cybersecurity telemetry, detection, and incident-correlation platform designed to transform raw security logs into **structured, explainable, and actionable security information**.
 
-> **Current verification:** 342/383 automated tests pass (41 pre-existing fixture
-> incompatibilities unrelated to the project). The 8 test modules touched by the
-> ML/dashboard work pass 84/84. Database-marked tests pass when PostgreSQL and
-> the migrations are available.
+The platform collects telemetry from two complementary sources:
 
-## Table of contents
+- **Cowrie** — SSH/Telnet honeypot
+- **OWASP Juice Shop** — intentionally vulnerable web application behind Nginx
 
-1. [Architecture](#architecture)
-2. [Project structure](#project-structure)
-3. [Requirements](#requirements)
-4. [Quick start](#quick-start)
-5. [Database setup](#database-setup)
-6. [Running the collectors](#running-the-collectors)
-7. [Running the pipeline (detection + correlation + ML)](#running-the-pipeline)
-8. [Running the API](#running-the-api)
-9. [Running the dashboard](#running-the-dashboard)
-10. [Machine learning (advisory)](#machine-learning-advisory)
-11. [Kubernetes deployment](#kubernetes-deployment)
-12. [API reference](#api-reference)
-13. [Event and incident contracts](#event-and-incident-contracts)
-14. [Tests](#tests)
-15. [Security model](#security-model)
-16. [Data quality](#data-quality)
-17. [Current limitations](#current-limitations)
-18. [Dependencies](#dependencies)
+The collected data is normalized, stored in PostgreSQL, analyzed by an explainable rule-based detection engine, correlated into incidents, and exposed through a restricted **FastAPI** API and a **Streamlit** dashboard.
+
+> **Academic cybersecurity project — FSS**
 
 ---
 
-## Architecture
+## 📌 Table of Contents
 
-```
-Cowrie (SSH) ──┐
-               ├──► Collectors ──► Normalizer ──► PostgreSQL (security_events)
-Juice Shop ────┘        (Nginx JSONL)              │
-                                                   ├──► Detection engine (rules)
-                                                   │         │
-                                                   │         ▼
-                                                   │   Detections (append-only)
-                                                   │         │
-                                                   │         ▼
-                                                   │   Correlator ──► Incidents
-                                                   │
-                                                   └──► ML: session features
-                                                            │
-                                                            ▼
-                                                    Isolation Forest (advisory)
-                                                            │
-                                                            ▼
-                                                   /ml/status bridge (JSON)
-                                                   │
-                                                   ▼
-                              Read-only FastAPI (honeytrace_api role) ──► Streamlit dashboard
-```
-
-1. **Cowrie** produces SSH/Telnet honeypot events in JSON Lines.
-2. **OWASP Juice Shop** provides the local web-application test target.
-3. **Nginx** records HTTP access events in JSON Lines.
-4. **Collectors** read source logs, validate, normalize, deduplicate, quarantine.
-5. **Normalizer** maps events to a shared schema and redacts sensitive fields.
-6. **PostgreSQL** stores normalized events, detections and incidents.
-7. **Detection engine** runs versioned, explicit rules (no black box).
-8. **Correlator** groups detections by `(source, session_id)` into incidents.
-9. **Pipeline** (`src/pipeline.py`) runs detection + correlation + the advisory ML
-   scoring and writes the metrics bridge file.
-10. **Read-only API** serves the 13 approved event fields, the incident contract
-    and `/ml/status` through `honeytrace_api`, never the write account.
-11. **Dashboard** reads only through the HTTP API; it has no database credentials.
-12. **Kubernetes** runs PostgreSQL, the API and the dashboard with a restricted
-    pod security profile.
+- [Project Overview](#-project-overview)
+- [Architecture](#-architecture)
+- [Main Components](#-main-components)
+- [Data Flow](#-data-flow)
+- [Security Design](#-security-design)
+- [Detection and Correlation](#-detection-and-correlation)
+- [Machine Learning](#-machine-learning)
+- [Current Dataset](#-current-dataset)
+- [Project Structure](#-project-structure)
+- [Requirements](#-requirements)
+- [Installation](#-installation)
+- [Running the Project](#-running-the-project)
+- [API](#-api)
+- [Dashboard](#-dashboard)
+- [Security Demonstration](#-security-demonstration)
+- [Testing](#-testing)
+- [Kubernetes](#-kubernetes)
+- [Troubleshooting](#-troubleshooting)
+- [Current Limitations](#-current-limitations)
+- [Future Improvements](#-future-improvements)
 
 ---
 
-## Project structure
+# 🔎 Project Overview
+
+Security tools often generate large amounts of raw telemetry that can be difficult to analyze directly.
+
+HoneyTrace AI addresses this problem by transforming raw telemetry into a structured pipeline:
 
 ```text
-honeytrace-ai/
-├── config/nginx/default.conf
-├── data/
-│   ├── raw/                 # gitignored source logs
-│   ├── fixtures/cowrie/     # anonymized sample
-│   ├── labels/              # session labels
-│   ├── manifests/           # replay manifest
-│   └── quarantine/          # gitignored
-├── docker/
-│   ├── initdb/              # role password bootstrap scripts
-│   └── compose (see docker-compose.yml)
-├── scripts/
-│   ├── anonymize_cowrie_sample.py
-│   ├── build_labels.py
-│   ├── demo_security_proof.py
-│   └── replay_cowrie_session.py
+Raw Security Logs
+       │
+       ▼
+┌───────────────────────┐
+│       Collectors      │
+│                       │
+│ Cowrie / Juice Shop   │
+└───────────┬───────────┘
+            │
+            ▼
+┌───────────────────────┐
+│     Normalization     │
+└───────────┬───────────┘
+            │
+            ▼
+┌───────────────────────┐
+│      PostgreSQL       │
+│   Source of Truth     │
+└───────────┬───────────┘
+            │
+            ▼
+┌───────────────────────┐
+│   Detection Engine    │
+│    Rule-based IDS     │
+└───────────┬───────────┘
+            │
+            ▼
+┌───────────────────────┐
+│  Correlation Engine   │
+│   Detection → Incident│
+└───────────┬───────────┘
+            │
+            ▼
+┌───────────────────────┐
+│       FastAPI         │
+│   Read-only API       │
+└───────────┬───────────┘
+            │
+            ▼
+┌───────────────────────┐
+│      Streamlit        │
+│      Dashboard        │
+└───────────────────────┘
+```
+
+The main objective is to provide analysts with **explainable detections and incidents without exposing unnecessary sensitive information**.
+
+---
+
+# 🏗️ Architecture
+
+```text
+                 ┌──────────────────┐
+                 │      Cowrie      │
+                 │ SSH/Telnet       │
+                 │ Honeypot         │
+                 └────────┬─────────┘
+                          │
+                          │
+                          ▼
+                 ┌──────────────────┐
+                 │    Collectors    │
+                 └────────┬─────────┘
+                          │
+                          │
+┌──────────────────┐      │
+│  Juice Shop      │──────┘
+│ Vulnerable Web   │
+│ App + Nginx      │
+└──────────────────┘
+                          │
+                          ▼
+                 ┌──────────────────┐
+                 │   Normalization  │
+                 └────────┬─────────┘
+                          │
+                          ▼
+                 ┌──────────────────┐
+                 │    PostgreSQL    │
+                 │  Source of Truth │
+                 └────────┬─────────┘
+                          │
+                          ▼
+                 ┌──────────────────┐
+                 │ Detection Engine │
+                 │ 9 implemented    │
+                 │ rules             │
+                 └────────┬─────────┘
+                          │
+                          ▼
+                 ┌──────────────────┐
+                 │ Correlation      │
+                 │ Engine           │
+                 └────────┬─────────┘
+                          │
+                          ▼
+                 ┌──────────────────┐
+                 │     FastAPI      │
+                 │ Read-only API    │
+                 └────────┬─────────┘
+                          │
+                          ▼
+                 ┌──────────────────┐
+                 │    Streamlit     │
+                 │    Dashboard     │
+                 └──────────────────┘
+```
+
+---
+
+# 🧩 Main Components
+
+## 🐚 Cowrie
+
+Cowrie is used as the SSH/Telnet honeypot.
+
+It generates telemetry such as:
+
+- connection events
+- authentication attempts
+- commands
+- command sequences
+- session information
+
+Cowrie provides session IDs, which allows HoneyTrace AI to correlate multiple detections belonging to the same attacker session.
+
+---
+
+## 🛒 OWASP Juice Shop
+
+OWASP Juice Shop is an intentionally vulnerable web application.
+
+In this project it is used as a **web telemetry source**, not as a traditional honeypot.
+
+Its telemetry is collected through the web application/Nginx layer.
+
+Examples include:
+
+- failed login attempts
+- server errors
+- sensitive routes being served
+
+Juice Shop events currently do not contain session IDs suitable for the project's correlation strategy.
+
+Therefore, Juice Shop detections remain standalone detections and are not converted into incidents.
+
+---
+
+# 🔄 Data Flow
+
+The complete processing pipeline is:
+
+```text
+Cowrie / Juice Shop
+        │
+        ▼
+     Collectors
+        │
+        ▼
+   Normalization
+        │
+        ▼
+    PostgreSQL
+        │
+        ▼
+ Detection Engine
+        │
+        ▼
+ Correlation Engine
+        │
+        ▼
+     FastAPI
+        │
+        ▼
+   Streamlit UI
+```
+
+---
+
+# 🧹 Normalization
+
+Different security sources produce different log formats.
+
+Normalization converts them into a common event structure.
+
+The normalization layer:
+
+- validates timestamps
+- extracts common fields
+- converts source-specific data
+- stores additional information in metadata
+- masks sensitive keys
+- validates incoming events
+
+This allows the detection engine to work with a consistent structure regardless of the original source.
+
+---
+
+# 🔐 Data Minimization
+
+HoneyTrace AI deliberately limits the amount of information exposed outside the database.
+
+The public API exposes exactly **13 approved fields**.
+
+Sensitive/internal fields such as:
+
+```text
+raw_event
+metadata
+command
+message
+username
+```
+
+are not exposed by the API.
+
+The architecture follows a one-way reduction of data exposure:
+
+```text
+Raw telemetry
+     ↓
+Normalization
+     ↓
+Database
+     ↓
+Detection / Correlation
+     ↓
+Restricted API
+     ↓
+Dashboard
+```
+
+---
+
+# 🔑 Idempotent Event Ingestion
+
+HoneyTrace AI generates a deterministic `event_id` using **SHA-256** over canonicalized event data.
+
+This makes event ingestion idempotent.
+
+If the same event is processed again, it does not create a duplicate record.
+
+Conceptually:
+
+```text
+Same event
+   │
+   ▼
+Same canonical representation
+   │
+   ▼
+Same SHA-256
+   │
+   ▼
+Same event_id
+   │
+   ▼
+Duplicate rejected
+```
+
+The database uses:
+
+```sql
+ON CONFLICT (event_id) DO NOTHING
+```
+
+to prevent duplicate insertion.
+
+---
+
+# 🗃️ PostgreSQL
+
+PostgreSQL is the **source of truth** for the platform.
+
+It stores:
+
+- security events
+- detections
+- incidents
+
+The database is accessed through controlled application layers rather than directly from the dashboard.
+
+---
+
+# 🚨 Detection and Correlation
+
+## Detection Engine
+
+The detection engine is primarily **rule-based and explainable**.
+
+Rules are explicit and versioned.
+
+Each detection can be traced back to:
+
+- the detection rule
+- the source event
+- the severity
+- the evidence supporting the detection
+
+The current implementation contains **9 detection rules**, although only some of them fire on the current dataset.
+
+---
+
+## Current Detection Results
+
+The current dataset contains:
+
+| Detection rule | Count |
+|---|---:|
+| `COWRIE_CMD_CHMOD_EXEC` | 8 |
+| `JUICE_LOGIN_FAILED` | 8 |
+| `JUICE_SERVER_ERROR` | 1 |
+| `JUICE_SENSITIVE_ROUTE_SERVED` | 1 |
+| **Total** | **18** |
+
+Therefore:
+
+```text
+18 detections
+      ↓
+8 incidents
+```
+
+---
+
+# 🔗 Correlation
+
+The current correlation strategy groups detections using:
+
+```text
+(source, session_id)
+```
+
+Cowrie provides session IDs, so Cowrie detections can be correlated into incidents.
+
+Juice Shop events currently do not provide the required session ID.
+
+Therefore:
+
+```text
+Cowrie
+  │
+  ├── detection
+  ├── detection
+  └── detection
+          │
+          ▼
+       Incident
+```
+
+while:
+
+```text
+Juice Shop
+  │
+  ├── detection
+  ├── detection
+  └── detection
+
+(no session_id)
+       │
+       ▼
+Standalone detections
+```
+
+IP-based correlation is deliberately not used.
+
+---
+
+# 🤖 Machine Learning
+
+Machine learning exists in the project for experimental/offline comparison.
+
+The project includes:
+
+- Isolation Forest
+- DBSCAN
+
+However, ML is **not the primary live detection mechanism**.
+
+The live detection pipeline relies on explicit, explainable rules.
+
+This means the system can explain why an alert was generated instead of relying on a black-box prediction.
+
+---
+
+# 📊 Current Dataset
+
+The current demonstration dataset contains:
+
+| Metric | Value |
+|---|---:|
+| Events | **356** |
+| Sessions | **25** |
+| Source IPs | **3** |
+| Detections | **18** |
+| Incidents | **8** |
+| Cowrie events | **339** |
+| Juice Shop events | **17** |
+| Detection rules implemented | **9** |
+| Public API fields | **13** |
+
+All current incidents are Cowrie incidents because Juice Shop events cannot currently be correlated using the `(source, session_id)` strategy.
+
+---
+
+# 🛡️ Security Design
+
+HoneyTrace AI uses several security controls.
+
+## Least Privilege
+
+The `honeytrace_api` PostgreSQL role is restricted to the approved public columns.
+
+The API does not receive unrestricted database access.
+
+---
+
+## Two-Level API Protection
+
+The 13-field API contract is enforced at two levels:
+
+### Application level
+
+Pydantic models use:
+
+```python
+extra="forbid"
+```
+
+### Database level
+
+Column-level SQL privileges restrict what the API role can access.
+
+This means the database independently enforces the data exposure boundary.
+
+---
+
+## Dashboard Isolation
+
+The Streamlit dashboard does **not** have database credentials.
+
+The architecture is:
+
+```text
+Streamlit
+    │
+    │ HTTP
+    ▼
+ FastAPI
+    │
+    │ SQL
+    ▼
+PostgreSQL
+```
+
+The dashboard therefore cannot directly query PostgreSQL.
+
+---
+
+## Append-Only Detections
+
+Detection records are append-only.
+
+A database trigger protects the historical detection evidence.
+
+This prevents existing detection records from being silently modified.
+
+---
+
+## Monotonic Incident Severity
+
+Incident severity can increase but cannot silently decrease.
+
+For example:
+
+```text
+Medium
+  ↓
+High
+  ↓
+Critical
+```
+
+but not:
+
+```text
+Critical
+  ↓
+Medium
+```
+
+without an explicit process.
+
+---
+
+## Quarantine
+
+Malformed or rejected input is quarantined without storing the original sensitive content.
+
+The system records information such as:
+
+- hash
+- line information
+- rejection reason
+- timestamp
+
+This allows rejected input to be tracked without unnecessarily storing its contents.
+
+---
+
+## Pagination
+
+The API uses cursor-based pagination for event retrieval.
+
+This prevents the dashboard from requesting the entire dataset at once and is better suited to datasets that continue to grow.
+
+---
+
+## Database Timeout
+
+Database statements have a **5-second timeout**.
+
+This limits the impact of unexpectedly long-running database operations.
+
+---
+
+# 🌐 API
+
+The FastAPI service provides read-only endpoints.
+
+## Health
+
+```http
+GET /health
+```
+
+Basic liveness check.
+
+Expected response:
+
+```json
+{
+  "status": "ok"
+}
+```
+
+---
+
+## Database Health
+
+```http
+GET /health/db
+```
+
+Checks database readiness/connectivity.
+
+Expected response:
+
+```json
+{
+  "status": "ok"
+}
+```
+
+---
+
+## Events
+
+```http
+GET /events
+```
+
+Returns cursor-paginated security events.
+
+Example:
+
+```http
+GET /events?limit=5
+```
+
+---
+
+## Single Event
+
+```http
+GET /events/{event_id}
+```
+
+Returns one event.
+
+A non-existent event returns:
+
+```text
+404
+```
+
+---
+
+## Incidents
+
+```http
+GET /incidents
+```
+
+Returns incidents.
+
+---
+
+## Single Incident
+
+```http
+GET /incidents/{incident_id}
+```
+
+Returns one incident.
+
+---
+
+## ML Status
+
+```http
+GET /ml/status
+```
+
+Provides the current ML status.
+
+---
+
+# 📚 Swagger Documentation
+
+FastAPI automatically exposes OpenAPI/Swagger documentation.
+
+Once the API is running:
+
+```text
+http://localhost:8000/docs
+```
+
+This interface can be used to demonstrate:
+
+- health checks
+- event retrieval
+- event details
+- incident retrieval
+- incident details
+- API validation
+- response schemas
+
+---
+
+# 📈 Dashboard
+
+The project uses **Streamlit** for the dashboard.
+
+Default demonstration URL:
+
+```text
+http://localhost:8502
+```
+
+The dashboard contains three main sections:
+
+```text
+Overview
+Events
+Incidents
+```
+
+---
+
+## Overview
+
+The Overview page displays:
+
+- KPI cards
+- event statistics
+- source distribution
+- top event types
+- top source IPs
+- latest events
+
+A fresh session initially loads one page of 50 events.
+
+Therefore, the initial KPI cards represent the **loaded page set**, not necessarily the complete database.
+
+To load the complete demonstration dataset:
+
+1. Set **Page size** to `200`
+2. Open **Events**
+3. Click **Load more**
+4. Return to **Overview**
+
+The dashboard then loads:
+
+```text
+356 events
+25 sessions
+3 source IPs
+10 event types
+```
+
+---
+
+## Events
+
+The Events page provides:
+
+- event table
+- quick filtering
+- filter chips
+- event details
+- 13-field event representation
+- pagination
+- Load More functionality
+
+The event detail view exposes the same approved 13-field contract.
+
+---
+
+## Incidents
+
+The Incidents page provides:
+
+- incident KPIs
+- incident table
+- severity indicators
+- filtering
+- incident details
+- incident timeline
+
+The current dataset contains:
+
+```text
+8 incidents
+8 open
+0 new evidence
+0 high/critical
+```
+
+The current incidents are medium-severity Cowrie incidents.
+
+---
+
+# 🧪 Security Demonstration
+
+The repository contains a security demonstration script:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\demo_security_proof.py
+```
+
+The script demonstrates:
+
+- health checks
+- approved API fields
+- forbidden fields
+- dataset counts
+- incident totals
+
+---
+
+## Database Permission Proof
+
+To inspect the columns granted to `honeytrace_api`:
+
+```powershell
+kubectl -n honeytrace exec deploy/honeytrace-postgres -- psql -U hive -d honeytrace -c "SELECT column_name FROM information_schema.column_privileges WHERE grantee='honeytrace_api' AND table_name='security_events' ORDER BY column_name;"
+```
+
+This should show the approved public columns.
+
+---
+
+# 🧪 API Security Tests
+
+The API can also be tested manually.
+
+### Non-existent event
+
+Call:
+
+```http
+GET /events/{invalid_event_id}
+```
+
+Expected:
+
+```text
+404 Not Found
+```
+
+### Invalid timestamp
+
+For example:
+
+```http
+GET /events?since=2026-01-01
+```
+
+without a timezone.
+
+Expected:
+
+```text
+400 Bad Request
+```
+
+This demonstrates API input validation.
+
+---
+
+# 🧪 Automated Tests
+
+Run:
+
+```powershell
+python -m pytest tests/ -q -m "not db"
+```
+
+Expected result:
+
+```text
+263 passed
+5 skipped
+36 deselected
+```
+
+The test suite can therefore validate the application without requiring a database for the non-DB tests.
+
+---
+
+# 📁 Project Structure
+
+```text
+HoneyTrace-AI/
+│
 ├── src/
 │   ├── api/
-│   │   ├── main.py          # FastAPI app, /health, /health/db, /events, /incidents, /ml/status
-│   │   ├── events.py        # read-only event queries
-│   │   ├── incidents.py     # read-only incident queries + 503 reasons
-│   │   ├── models.py        # Pydantic contracts (extra="forbid")
-│   │   ├── database.py      # connection helpers
-│   │   └── config.py        # API_DATABASE_URL resolution
+│   │   └── ...
+│   │
 │   ├── collectors/
-│   │   ├── cowrie_collector.py
-│   │   └── juice_shop_collector.py
+│   │   ├── cowrie/
+│   │   └── juice_shop/
+│   │
 │   ├── correlation/
-│   │   ├── correlator.py
-│   │   ├── export.py        # public evidence projection
-│   │   └── timeline.py
+│   │
 │   ├── dashboard/
-│   │   ├── app.py           # Streamlit shell, sidebar, routing
-│   │   ├── api_client.py    # HTTP client (stdlib only)
-│   │   ├── components.py    # badges, kv_grid, panels
-│   │   ├── theme.py         # design tokens + CSS
-│   │   └── views/
-│   │       ├── overview.py  # KPIs, charts, ML monitoring
-│   │       ├── events.py    # paginated event table
-│   │       └── incidents.py # incident table + timeline + ML detail
+│   │   └── app.py
+│   │
 │   ├── detection/
-│   │   ├── engine.py
 │   │   └── rules.py
+│   │
 │   ├── ml/
-│   │   ├── features.py      # 9 numeric session features
-│   │   ├── isolation_forest.py  # SessionAnomalyDetector
-│   │   ├── metrics.py
-│   │   ├── compare_methods.py
-│   │   ├── dbscan.py
-│   │   ├── synthetic.py
-│   │   └── evaluate_real.py
-│   ├── normalization/normalize.py
+│   │
+│   ├── normalization/
+│   │
 │   ├── storage/
-│   │   ├── postgres.py
-│   │   ├── detections_writer.py  # append-only detections, upsert incidents
-│   │   └── check_connection.py
-│   └── pipeline.py          # detection + correlation + ML + metrics bridge
+│   │
+│   └── pipeline.py
+│
+├── scripts/
+│   └── demo_security_proof.py
+│
 ├── sql/
-│   ├── 001_create_security_events.sql
-│   ├── 002_create_api_readonly_role.sql
-│   ├── 003_create_detections_incidents.sql
-│   ├── 004_api_detection_incident_grants.sql
-│   └── 005_create_pipeline_role.sql
-├── k8s/                    # namespace, postgres, api, dashboard, cronjob, configmap
-├── tests/                  # 383 tests (api, collectors, detection, ml, dashboard)
-├── docs/                   # field policy, schema, integration contract, runbook
-├── docker-compose.yml
-├── Dockerfile
-├── .env.example
+│   └── migrations/
+│
+├── k8s/
+│   ├── namespace.yaml
+│   ├── postgres.yaml
+│   ├── api.yaml
+│   ├── dashboard.yaml
+│   ├── pg-secret.yaml
+│   ├── streamlit-configmap.yaml
+│   └── pipeline-cronjob.yaml
+│
+├── tests/
+│
+├── docs/
+│
+├── report/
+│   └── HoneyTrace_AI_Report.docx
+│
 ├── requirements.txt
 ├── requirements-ml.txt
-└── README.md
+├── .env.example
+├── Dockerfile
+└── docker-compose.yml
 ```
 
 ---
 
-## Requirements
+# 💻 Requirements
 
-- Python 3.11+ and a virtual environment
-- Docker Desktop (PostgreSQL container on `127.0.0.1:5433`)
-- Cowrie and OWASP Juice Shop containers (optional, for live collection)
-- Nginx proxy for Juice Shop access logging
-- Optional: Docker Desktop's built-in Kubernetes for `k8s/`
+The project is designed to run on Windows/Linux with:
+
+- Python
+- Docker Desktop
+- Kubernetes / `kubectl`
+- PostgreSQL through the project deployment
+- Git
+
+For the complete Kubernetes demonstration, Docker Desktop with Kubernetes enabled is required.
 
 ---
 
-## Quick start
+# ⚙️ Installation
+
+## 1. Clone the repository
 
 ```powershell
-# 1. clone and enter
-git clone https://github.com/nourlachaal/honeytrace-ai.git
-cd honeytrace-ai
+git clone <YOUR_GITHUB_REPOSITORY_URL>
+cd HoneyTrace-AI
+```
 
-# 2. virtualenv + deps
+---
+
+## 2. Create a virtual environment
+
+Windows PowerShell:
+
+```powershell
 python -m venv .venv
+```
+
+Activate it:
+
+```powershell
 .\.venv\Scripts\Activate.ps1
+```
+
+If PowerShell activation is not available, the project Python executable can be called directly:
+
+```powershell
+.\.venv\Scripts\python.exe
+```
+
+---
+
+## 3. Upgrade pip
+
+```powershell
+python -m pip install --upgrade pip
+```
+
+---
+
+## 4. Install dependencies
+
+Install the main dependencies:
+
+```powershell
 python -m pip install -r requirements.txt
-python -m pip install -r requirements-ml.txt   # optional, enables ML
-
-# 3. configure
-copy .env.example .env   # then edit DB passwords
-
-# 4. database
-docker compose up -d
-
-# 5. run the pipeline (creates detections/incidents + ML bridge)
-python -m src.pipeline --dry-run
-
-# 6. API
-python -m uvicorn src.api.main:app --host 127.0.0.1 --port 8000
-
-# 7. dashboard (new terminal)
-$env:API_BASE_URL = "http://127.0.0.1:8000"
-python -m streamlit run src/dashboard/app.py
 ```
 
-Open `http://localhost:8501` (dashboard) and `http://127.0.0.1:8000/docs` (Swagger).
+Install the ML dependencies:
+
+```powershell
+python -m pip install -r requirements-ml.txt
+```
 
 ---
 
-## Database setup
+# 🐳 Docker
 
-```powershell
-docker compose up -d          # applies sql/001..003 on first start
-```
-
-Migrations applied automatically on first start of an empty volume:
-
-| File | Purpose |
-|---|---|
-| `sql/001_create_security_events.sql` | `security_events` table + indexes |
-| `sql/002_create_api_readonly_role.sql` | creates `honeytrace_api` role |
-| `sql/003_create_detections_incidents.sql` | `detections` (append-only) + `incidents` |
-| `sql/004_api_detection_incident_grants.sql` | column-level grants to `honeytrace_api` |
-| `sql/005_create_pipeline_role.sql` | pipeline write role |
-
-The API connects with `honeytrace_api` (read-only). The pipeline connects with
-the write account from `DATABASE_URL`.
-
----
-
-## Running the collectors
-
-### Cowrie
-
-```powershell
-python -m src.collectors.cowrie_collector --dry-run   # validate only
-python -m src.collectors.cowrie_collector              # import
-```
-
-### Juice Shop
-
-Use the local Nginx proxy at `http://127.0.0.1:3001` (direct access to port 3000
-bypasses the logger).
-
-```powershell
-python -m src.collectors.juice_shop_collector --dry-run
-python -m src.collectors.juice_shop_collector
-```
-
-Collectors report inserted events, duplicates skipped and quarantined records.
-
----
-
-## Running the pipeline
-
-```powershell
-python -m src.pipeline            # write detections + incidents
-python -m src.pipeline --dry-run  # compute + write ML bridge, no DB writes
-python -m src.pipeline --since 2026-11-19T00:00:00Z
-```
-
-The pipeline runs the detection engine, the correlator, then the advisory ML
-scoring, and writes `data/ml_metrics.json` (aggregate only, no sensitive data).
-
----
-
-## Running the API
+Start the local services with:
 
 ```powershell
 docker compose up -d
-python -m uvicorn src.api.main:app --host 127.0.0.1 --port 8000
 ```
 
-The API is read-only and connects with `honeytrace_api`, never the write account.
-
----
-
-## Running the dashboard
+Check the containers:
 
 ```powershell
-$env:API_BASE_URL = "http://127.0.0.1:8000"
-python -m streamlit run src/dashboard/app.py
+docker compose ps
 ```
 
-Default API URL is `http://127.0.0.1:8000` (override with `API_BASE_URL`).
-The dashboard has three tabs:
-
-- **Overview** — KPI cards, events-over-time chart, top event types/sources/IPs,
-  latest events feed, and an **ML monitoring** section.
-- **Events** — paginated table; select a row to see all 13 approved fields.
-- **Incidents** — severity/status filters, table with ML column + criticality
-  chips, an "ML anomalies" KPI, and a timeline for the selected incident.
-
----
-
-## Machine learning (advisory)
-
-The ML layer is **advisory**: it never changes a detection or an incident.
-
-### Features (`src/ml/features.py`)
-
-9 numeric aggregates per session, derived only from events (no text, no rule
-output, to avoid leakage):
-
-`event_count`, `login_failed_count`, `login_success_count`, `command_count`,
-`distinct_event_types`, `distinct_usernames`, `duration_seconds`,
-`events_per_second`, `failed_login_ratio`.
-
-### Model (`src/ml/isolation_forest.py`)
-
-- `SessionAnomalyDetector` wraps scikit-learn's `IsolationForest`
-  (contamination 0.1, 100 estimators).
-- Trained when no artifact exists; otherwise the saved artifact is loaded
-  (`data/models/isolation_forest.joblib`, format version 1, model version 1.2.0).
-- `decision_threshold` is derived from the model's `offset_`.
-
-### Scoring
-
-- `detector.score(features)` returns a `SessionScore(source, session_id,
-  anomaly_score, is_anomaly)` per session.
-- Scores are attached to detections in memory (`_attach_ml_scores`).
-- Only sessions flagged `is_anomaly=True` are published.
-
-### Metrics bridge (`data/ml_metrics.json`)
-
-Written by the pipeline (atomic temp-file + rename). Contains only aggregates:
-
-`inference_executed`, `inference_success`, `model_loaded`, `model_trained`,
-`sessions_evaluated`, `sessions_scored`, `anomalies_found`, `model_version`,
-`model_source`, `persistence_status`, `last_inference_at`, `inference_error`,
-`anomaly_type` (`isolation_forest`), `anomaly_threshold`, and
-`anomaly_sessions` (list of `{source, session_id, score, threshold,
-criticality, category, features, is_anomaly}`).
-
-### Criticality bands (advisory)
-
-Percentile of the anomaly score among all scored sessions:
-
-| Percentile | Criticality |
-|---|---|
-| ≥ 99th | critical |
-| ≥ 95th | high |
-| ≥ 85th | medium |
-| else | low |
-
-### Anomaly category
-
-Derived from the session's dominant behaviour: `command_execution`,
-`failed_login_burst`, `web_request`, `session_behaviour`.
-
-### `/ml/status`
-
-The API reads the bridge and exposes the fields above plus `events_total` and
-`sessions_total` (read from the DB). `model_trained` reflects the actual fitted
-state of the loaded artifact, not whether this run trained it.
-
----
-
-## Kubernetes deployment
+Stop them with:
 
 ```powershell
-kubectl apply -f k8s/namespace.yaml
-kubectl apply -f k8s/postgres.yaml
-kubectl apply -f k8s/api.yaml
-kubectl apply -f k8s/dashboard.yaml
-kubectl -n honeytrace get deploy,pvc
+docker compose down
 ```
 
-The API and dashboard run with `readOnlyRootFilesystem: true`, drop all
-capabilities and run as non-root. The database uses a PersistentVolumeClaim.
-Secrets (`k8s/pg-secret.yaml`) must be created locally and never committed.
-
 ---
 
-## API reference
+# ☸️ Kubernetes Deployment
 
-Base URL: `http://127.0.0.1:8000`
+The project also contains Kubernetes manifests.
 
-| Endpoint | Purpose |
-|---|---|
-| `GET /health` | liveness; never touches the database |
-| `GET /health/db` | readiness; `200 ok`, or `503 not_configured` / `unavailable` |
-| `GET /events` | newest-first events with cursor pagination and filters |
-| `GET /events/{event_id}` | one event; `404` unknown, `422` malformed id |
-| `GET /incidents` | newest-first incidents with cursor pagination and filters |
-| `GET /incidents/{incident_id}` | one incident; `404` unknown, `422` malformed id |
-| `GET /ml/status` | advisory ML status + anomaly sessions |
-
-### `/events` query params
-
-`limit` (1-200, default 50), `cursor`, `source`, `event_type`, `src_ip`,
-`since`, `until`. Timestamps must include a timezone.
-
-### `/incidents` query params
-
-`limit` (1-200, default 50), `cursor`, `source`, `status`, `severity`.
-
-### Incident 503 reasons
-
-| Detail | Meaning |
-|---|---|
-| `incidents_not_configured` | the API has no database URL |
-| `incidents_table_missing` | `detections` / `incidents` do not exist yet |
-| `incidents_not_granted` | `honeytrace_api` lacks the column grants |
-| `incidents_unavailable` | the tables exist but the query failed |
-
-Incidents are Cowrie-only by design: Juice Shop events carry no `session_id`, so
-the correlator cannot group them, and IP-based correlation is forbidden.
-
-Interactive docs: `http://127.0.0.1:8000/docs`.
-
----
-
-## Event and incident contracts
-
-The API returns exactly 13 approved event fields (`event_id`, `source`,
-`event_timestamp`, `collected_at`, `event_type`, `session_id`, `scenario_id`,
-`test_run_id`, `src_ip`, `protocol`, `http_method`, `route`, `status_code`).
-It never returns `raw_event`, `metadata`, `command`, `message` or `username`.
-
-This is enforced at two levels: Pydantic models with `extra="forbid"`, and
-column-level `SELECT` grants on `honeytrace_api`.
-
-Incidents expose 14 columns (`incident_id`, `source`, `session_id`, `title`,
-`summary`, `severity`, `status`, `has_new_evidence`, `detection_ids`,
-`event_ids`, `missing_event_ids`, `timeline`, `created_at`, `updated_at`).
-`timeline` entries contain only `timestamp`, `event_id`, `event_type`, `source`
-and `detection_ids`. `evidence_internal` is never served.
-
-See `docs/api-field-policy.md`, `docs/event-schema.md` and
-`docs/integration-contract.md`.
-
----
-
-## Tests
+Check the cluster:
 
 ```powershell
-# no database required
-python -m pytest tests/ -q -m "not db"
-# expected: 328 passed (or 263 without scikit-learn), 4 skipped
-
-# database required (schema + grants under test)
-python -m pytest tests/ -q -m db
-# expected: 35 passed
+kubectl get nodes
 ```
 
-Coverage: normalization, collectors, API health/events/event-detail/incidents,
-field contracts, detection rules/thresholds/sequences/grouping, correlation,
-export, incidents schema/timeline/id, ML features/isolation forest/evaluation,
-dashboard HTTP client and rendering.
+Create/apply the HoneyTrace namespace and resources according to the manifests in:
 
----
-
-## Security model
-
-- The API connects with `honeytrace_api` (read-only). The pipeline connects
-  with the write account. The dashboard has no database credentials.
-- Column-level `SELECT` grants: only the 13 public event columns and the 14
-  incident columns are readable. `evidence_internal`, `raw_event`, `metadata`,
-  `command`, `message`, `username` are never granted.
-- Pydantic models use `extra="forbid"`, so unknown fields are rejected.
-- Detections are append-only (DB trigger). Incident severity can only rise,
-  never fall. `status` is an analyst decision; the API has no write endpoint.
-- ML is advisory and never mutates detections or incidents.
-- `.env` and raw logs are gitignored and must never be committed.
-- Honeypot/web/proxy stay on localhost unless separately reviewed.
-
-For controlled experiments, correlate events via explicit `scenario_id` /
-`test_run_id`. Do not infer shared scenarios from matching IP addresses alone.
-
----
-
-## Data quality
-
-- Events validated before insertion.
-- Invalid records quarantined with diagnostic metadata (hash only, no raw line).
-- Re-imported events skipped via `event_id` primary key.
-- Sensitive fields redacted before storage.
-- Parameterized SQL throughout.
-
----
-
-## Current limitations
-
-- Incidents are Cowrie-only. Juice Shop events have no `session_id`, so they
-  produce detections but cannot be correlated into an incident.
-- Juice Shop's logged client IP may be a Docker bridge address.
-- Nginx logs method, URI, status, timestamp and source address only — no
-  bodies, cookies or auth headers.
-- ML tests skip without scikit-learn; ML deps are in `requirements-ml.txt`.
-- Incident status is an analyst decision; the API is read-only.
-
----
-
-## Dependencies
-
-```bash
-pip install -r requirements.txt                          # API, dashboard, engine
-pip install -r requirements.txt -r requirements-ml.txt   # plus ML comparison
+```text
+k8s/
 ```
 
-ML tests are skipped automatically when scikit-learn is not installed.
+Then check:
+
+```powershell
+kubectl get pods -n honeytrace
+```
+
+and:
+
+```powershell
+kubectl get svc -n honeytrace
+```
+
+The demonstration environment contains:
+
+```text
+3 Running pods
+3 services
+```
 
 ---
 
-## Documentation index
+# 🚀 Running the API
 
-- `docs/api-field-policy.md` — the 13-field contract
-- `docs/event-schema.md` — full event schema
-- `docs/integration-contract.md` — detection/incident contract
-- `docs/evaluation-report.md` — evaluation results
-- `docs/DEMO_RUNBOOK.md` — live demonstration script
-- `docs/person3-report.md` — API/dashboard/Kubernetes write-up
+For the Kubernetes demonstration, expose the API locally using:
+
+```powershell
+kubectl -n honeytrace port-forward svc/honeytrace-api 8000:8000
+```
+
+The API is then available at:
+
+```text
+http://localhost:8000
+```
+
+Swagger:
+
+```text
+http://localhost:8000/docs
+```
+
+Health check:
+
+```powershell
+curl http://127.0.0.1:8000/health
+```
+
+Database health check:
+
+```powershell
+curl http://127.0.0.1:8000/health/db
+```
+
+Expected:
+
+```json
+{"status":"ok"}
+```
+
+---
+
+# 🖥️ Running the Dashboard
+
+Run Streamlit locally with:
+
+```powershell
+python -m streamlit run src/dashboard/app.py --server.port 8502
+```
+
+The dashboard is then available at:
+
+```text
+http://localhost:8502
+```
+
+---
+
+# 🔎 Getting a Real Event ID
+
+PowerShell:
+
+```powershell
+python -c "import urllib.request,json; d=json.loads(urllib.request.urlopen('http://127.0.0.1:8000/events?limit=1').read()); print(d['items'][0]['event_id'])"
+```
+
+Use the returned ID with:
+
+```text
+GET /events/{event_id}
+```
+
+---
+
+# 🔎 Getting a Real Incident ID
+
+```powershell
+python -c "import urllib.request,json; d=json.loads(urllib.request.urlopen('http://127.0.0.1:8000/incidents?limit=1').read()); print(d['items'][0]['incident_id'])"
+```
+
+Use the returned ID with:
+
+```text
+GET /incidents/{incident_id}
+```
+
+---
+
+# 🔍 Viewing Detection Rules
+
+The project contains three categories of detection rules:
+
+- default rules
+- threshold rules
+- sequence rules
+
+To display the implemented rules:
+
+```powershell
+python -c "from src.detection.rules import DEFAULT_RULES, DEFAULT_THRESHOLD_RULES, DEFAULT_SEQUENCE_RULES; [print(r.rule_id, '|', r.severity) for r in DEFAULT_RULES + DEFAULT_THRESHOLD_RULES + DEFAULT_SEQUENCE_RULES]"
+```
+
+The current implementation contains:
+
+```text
+9 rules
+```
+
+---
+
+# 🧪 Live Demonstration
+
+A complete demonstration can be performed using three windows:
+
+```text
+┌─────────────────┐
+│   PowerShell    │
+│                 │
+│ Commands / K8s  │
+└─────────────────┘
+
+┌─────────────────┐
+│     Browser     │
+│                 │
+│ Swagger         │
+│ Dashboard       │
+└─────────────────┘
+
+┌─────────────────┐
+│     VS Code     │
+│                 │
+│ Source code     │
+└─────────────────┘
+```
+
+Recommended demonstration order:
+
+1. Explain the problem
+2. Show repository architecture
+3. Show `/health`
+4. Show `/health/db`
+5. Show `/events`
+6. Show `/incidents`
+7. Show the dashboard
+8. Demonstrate security controls
+9. Show detection rules
+10. Show correlation
+11. Run automated tests
+12. Optionally show Kubernetes
+
+---
+
+# ⚠️ Troubleshooting
+
+## API unreachable
+
+Run:
+
+```powershell
+kubectl -n honeytrace port-forward svc/honeytrace-api 8000:8000
+```
+
+Then test:
+
+```powershell
+curl http://127.0.0.1:8000/health
+```
+
+---
+
+## Dashboard blank
+
+Run:
+
+```powershell
+python -m streamlit run src/dashboard/app.py --server.port 8502
+```
+
+Then open:
+
+```text
+http://localhost:8502
+```
+
+---
+
+## Kubernetes pods are down
+
+Make sure Docker Desktop is running.
+
+Then:
+
+```powershell
+kubectl get pods -n honeytrace
+```
+
+Wait for the pods to become:
+
+```text
+Running
+```
+
+---
+
+## Dashboard contains no data
+
+Check:
+
+```powershell
+curl http://127.0.0.1:8000/health/db
+```
+
+If the database health check fails, inspect:
+
+```powershell
+kubectl get pods -n honeytrace
+kubectl get svc -n honeytrace
+```
+
+---
+
+# 🚧 Current Limitations
+
+The current implementation has several deliberate limitations.
+
+### No automatic blocking
+
+HoneyTrace AI detects and reports suspicious activity.
+
+It does not automatically:
+
+- block IP addresses
+- terminate sessions
+- modify firewall rules
+- attack back
+- respond automatically to attackers
+
+---
+
+### Juice Shop correlation
+
+Juice Shop telemetry currently lacks the session identifier required by the current correlation strategy.
+
+Therefore, its detections remain standalone.
+
+---
+
+### Cross-source correlation
+
+Cross-source correlation between Cowrie and Juice Shop is not currently implemented.
+
+---
+
+### ML
+
+Machine learning is currently used for offline experimentation/comparison rather than as the primary live detection mechanism.
+
+---
+
+### API exposure
+
+The API deliberately exposes only a restricted set of fields.
+
+Raw evidence remains internal.
+
+---
+
+# 🚀 Future Improvements
+
+Potential future improvements include:
+
+- HTTP session identification
+- cross-source correlation
+- improved secret detection inside free-text fields
+- additional detection rules
+- improved ML integration
+- automated response mechanisms
+- Kubernetes NetworkPolicies
+- Kubernetes RBAC hardening
+- larger-scale telemetry ingestion
+- additional security telemetry sources
+
+---
+
+# 📄 Project Report
+
+The complete project report is available at:
+
+```text
+report/HoneyTrace_AI_Report.docx
+```
+
+---
+
+# 🎯 Project Summary
+
+HoneyTrace AI transforms raw security telemetry into structured security intelligence:
+
+```text
+        RAW TELEMETRY
+              │
+              ▼
+         COLLECTION
+              │
+              ▼
+        NORMALIZATION
+              │
+              ▼
+          STORAGE
+        PostgreSQL
+              │
+              ▼
+         DETECTION
+        9 rule-based
+           rules
+              │
+              ▼
+        CORRELATION
+              │
+              ▼
+          INCIDENTS
+              │
+              ▼
+          FASTAPI
+        13 public fields
+              │
+              ▼
+         STREAMLIT
+          DASHBOARD
+```
+
+The platform emphasizes:
+
+- **Explainability**
+- **Least privilege**
+- **Data minimization**
+- **Defense in depth**
+- **Secure API design**
+- **Traceable detections**
+- **Controlled data exposure**
+- **Incident correlation**
+
+---
+
+## 📊 Demonstration Snapshot
+
+```text
+356 Events
+25 Sessions
+3 Source IPs
+18 Detections
+8 Incidents
+9 Detection Rules
+13 Public API Fields
+263 Automated Tests Passed
+```
+
+HoneyTrace AI is designed as an academic cybersecurity platform demonstrating how raw honeypot and application telemetry can be transformed into controlled, explainable security detections and incidents.
