@@ -414,20 +414,35 @@ IP-based correlation is deliberately not used.
 
 ---
 
-# 🤖 Machine Learning
+# 🤖 Machine Learning (advisory)
 
-Machine learning exists in the project for experimental/offline comparison.
+Machine learning is **advisory** and runs inside the live pipeline (`src/pipeline.py`).
+It never changes a detection or an incident on its own.
 
 The project includes:
 
-- Isolation Forest
-- DBSCAN
+- **Isolation Forest** (`src/ml/isolation_forest.py`) — `SessionAnomalyDetector`,
+  contamination 0.1, 100 estimators, model version 1.2.0, artifact format 1.
+- **DBSCAN** (`src/ml/dbscan.py`) — experimental/offline comparison.
+- 9 numeric session features (`src/ml/features.py`): `event_count`,
+  `login_failed_count`, `login_success_count`, `command_count`,
+  `distinct_event_types`, `distinct_usernames`, `duration_seconds`,
+  `events_per_second`, `failed_login_ratio`. No text, no rule output (no leakage).
 
-However, ML is **not the primary live detection mechanism**.
+The live detection pipeline still relies on explicit, explainable rules for
+detections and incidents. ML adds a **session-level anomaly signal** that the
+dashboard surfaces per incident:
 
-The live detection pipeline relies on explicit, explainable rules.
+- `/ml/status` exposes `model_trained`, `model_loaded`, `model_source`,
+  `sessions_scored`, `anomalies_found`, `anomaly_type` (`isolation_forest`),
+  `anomaly_threshold` and `anomaly_sessions` (each with `score`, `threshold`,
+  `criticality`, `category` and the session `features`).
+- Criticality is an advisory percentile band of the anomaly score:
+  critical (≥99th), high (≥95th), medium (≥85th), low (else).
+- Anomaly category describes the dominant behaviour: `command_execution`,
+  `failed_login_burst`, `web_request`, `session_behaviour`.
 
-This means the system can explain why an alert was generated instead of relying on a black-box prediction.
+An anomaly is **not** a confirmed attack — it is a signal to investigate.
 
 ---
 
@@ -670,7 +685,13 @@ Returns one incident.
 GET /ml/status
 ```
 
-Provides the current ML status.
+Provides the current ML status (advisory). Returns `enabled`, `model_loaded`,
+`model_trained`, `model_version`, `detector_version`, `sessions_evaluated`,
+`sessions_scored`, `detections_scored`, `anomalies_found`, `inference_success`,
+`inference_executed`, `persistence_status`, `model_source`, `status`,
+`events_total`, `sessions_total`, `last_inference_at`, `inference_error`,
+`anomaly_type`, `anomaly_threshold` and `anomaly_sessions` (per-session score,
+threshold, criticality, category and features).
 
 ---
 
@@ -720,12 +741,15 @@ Incidents
 
 The Overview page displays:
 
-- KPI cards
-- event statistics
+- KPI cards (events, detections, incidents, sessions)
+- event statistics and an events-over-time chart
 - source distribution
 - top event types
 - top source IPs
 - latest events
+- an **ML monitoring** section (`/ml/status`): model trained/loaded, versions,
+  sessions scored, anomalies found, inference success, persistence status,
+  model source, advisory anomaly sessions
 
 A fresh session initially loads one page of 50 events.
 
@@ -769,23 +793,28 @@ The event detail view exposes the same approved 13-field contract.
 
 The Incidents page provides:
 
-- incident KPIs
-- incident table
-- severity indicators
-- filtering
-- incident details
+- incident KPIs (including an **ML anomalies** card)
+- incident table with a severity column and an **ML** column
+  (anomaly category + criticality chip)
+- severity indicators (escalated when the advisory ML flags the session as
+  critical/high)
+- filtering by source / status / severity
+- incident details (8 core fields + ML anomaly block + session features +
+  ML run details)
 - incident timeline
 
 The current dataset contains:
 
 ```text
-8 incidents
-8 open
+7 incidents
+7 open
 0 new evidence
-0 high/critical
+1 high/critical   (the session flagged critical by the advisory ML model)
+1 ML anomaly      (session 7b08bd8296a1, category command_execution, critical)
 ```
 
-The current incidents are medium-severity Cowrie incidents.
+The remaining incidents are medium-severity Cowrie incidents. Severity can only
+rise (DB trigger) and is never lowered by ML.
 
 ---
 
