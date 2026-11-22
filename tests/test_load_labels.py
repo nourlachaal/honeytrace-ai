@@ -32,8 +32,8 @@ def test_invalid_csv_is_rejected(tmp_path, body):
 
 def test_real_repo_file_has_22_labels_balanced():
     labels = load_labels("data/labels/session_labels.csv")
-    assert len(labels) == 22
-    assert sum(labels.values()) == 11
+    assert len(labels) == 23
+    assert sum(labels.values()) == 12
 
 
 def test_evaluate_reports_sessions_without_events():

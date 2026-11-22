@@ -146,7 +146,7 @@ def normalize_event(
         "source_event_id": safe_raw.get("id") or safe_raw.get("event_uid"),
         "event_timestamp": event_timestamp,
         "event_type": event_type,
-        "session_id": safe_raw.get("session"),
+        "session_id": safe_raw.get("session_id") or safe_raw.get("session"),
         "scenario_id": scenario_id,
         "test_run_id": test_run_id,
         "src_ip": src_ip,

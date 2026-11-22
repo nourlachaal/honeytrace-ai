@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: honeytrace-streamlit-config
+  namespace: honeytrace
+data:
+  config.toml: |
+    [theme]
+    base = "dark"
+    primaryColor = "#EA580C"
+    backgroundColor = "#0A0F1C"
+    secondaryBackgroundColor = "#101828"
+    textColor = "#E8EEFB"
+    font = "sans serif"
+
+    [server]
+    headless = true
+    enableCORS = false
+    enableXsrfProtection = true
+
+    [browser]
+    gatherUsageStats = false

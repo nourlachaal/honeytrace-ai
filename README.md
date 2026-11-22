@@ -18,9 +18,7 @@ The collection, storage, read-only API and dashboard are implemented and tested.
 - Incident API over the detection/correlation tables, with typed 503 reasons
 - Kubernetes manifests for PostgreSQL, the API and the dashboard
 
-**Current verification:** 240 automated tests pass with `-m "not db"`, with 4 ML
-tests skipped when scikit-learn is not installed; 35 additional database-marked
-tests run when PostgreSQL and the migrations are available. The dashboard and API
+**Current verification:** 328 automated tests pass with `-m "not db"` (with scikit-learn installed), or 263 without; 36 additional database-marked tests run when PostgreSQL and the migrations are available. The dashboard and API
 are exercised against the HTTP contract, so the suite does not need a live
 database to catch field leaks or broken rendering.
 
@@ -362,15 +360,19 @@ For controlled experiments, use explicit `scenario_id` or `test_run_id` mappings
 
 ## Current Limitations
 
-- The persistence writer and batch runner are not in this repository yet, so the
-  incident tables are empty and the incident API returns an empty page rather
-  than real incidents.
+Person 3's full write-up of the API, dashboard, Kubernetes deployment, and incident
+API is in [`docs/person3-report.md`](docs/person3-report.md).
+
+- The persistence writer and batch runner are now available (`src/pipeline.py`,
+  `src/storage/detections_writer.py`). Running `python -m src.pipeline` on the
+  current dataset (356 events: 312 Cowrie + 27 Cowrie sample + 17 Juice Shop)
+  produces 18 detections and 8 incidents (all medium severity, Cowrie-only).
 - Incidents are Cowrie-only. Juice Shop events have no `session_id`, so they
   produce detections but cannot be correlated into an incident. IP-based
   correlation is deliberately not used.
 - Juice Shop's logged client IP may be a Docker bridge address rather than the original browser address.
 - The Nginx configuration logs the request method, URI path, status code, timestamp, and source address. It does not capture request bodies, cookies, or authorization headers.
-- The ML comparison runs offline and is not part of the API or dashboard image.
+- The ML advisory score runs in the live pipeline (`src/pipeline.py`) when scikit-learn is available. ML dependencies are in `requirements-ml.txt` (installed in the production image). ML tests skip without scikit-learn.
 - Incident status is an analyst decision; the API is read-only and does not
   expose a write endpoint.
 

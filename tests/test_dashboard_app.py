@@ -7,6 +7,7 @@ The fake API is URL-aware: the dashboard renders every tab on each run, so the
 events and incidents endpoints answer different payloads in the same script run.
 """
 
+import json
 import urllib.error
 from pathlib import Path
 
@@ -14,6 +15,7 @@ import pytest
 from streamlit.testing.v1 import AppTest
 
 from src.dashboard.api_client import ApiError
+from src.dashboard.views.events import APPROVED_FIELDS
 
 APP_PATH = Path(__file__).resolve().parents[1] / "src" / "dashboard" / "app.py"
 
@@ -61,19 +63,43 @@ INCIDENT = {
 EVENTS_PAGE = {"items": [ROW], "next_cursor": None}
 EMPTY_INCIDENTS = {"items": [], "next_cursor": None}
 
+ML_STATUS = {
+    "enabled": True,
+    "model_loaded": True,
+    "model_trained": True,
+    "model_version": "1.2.0",
+    "detector_version": "1.1.0",
+    "artifact_format_version": 1,
+    "sessions_evaluated": 25,
+    "sessions_scored": 25,
+    "detections_scored": 100,
+    "anomalies_found": 3,
+    "inference_success": True,
+    "persistence_status": "reused",
+    "model_source": "loaded",
+    "status": "completed",
+}
+
 
 def _install_api(
     monkeypatch: pytest.MonkeyPatch,
     *,
     events=None,
+    event=None,
     incidents=None,
     incident=None,
+    ml=None,
 ) -> None:
     """Patch the client's single HTTP seam with a URL-aware fake."""
     events = EVENTS_PAGE if events is None else events
     incidents = EMPTY_INCIDENTS if incidents is None else incidents
+    ml = ML_STATUS if ml is None else ml
 
     def fake_get(url: str, timeout: float = 0):
+        if "/ml/status" in url:
+            if isinstance(ml, ApiError):
+                raise ml
+            return ml
         if "/incidents/" in url:
             if incident is None:
                 raise ApiError("incident_not_found", status_code=404)
@@ -82,6 +108,10 @@ def _install_api(
             if isinstance(incidents, ApiError):
                 raise incidents
             return incidents
+        if "/events/" in url:
+            if event is None:
+                raise ApiError("event_not_found", status_code=404)
+            return event
         if isinstance(events, ApiError):
             raise events
         return events
@@ -106,12 +136,14 @@ def test_dashboard_reports_api_unavailable_without_crashing(
 
     assert not app.exception
     assert any("Cannot reach the API" in error.value for error in app.error)
+    assert ML_HEADING in _markdown(app)
 
 
 def test_dashboard_renders_a_page_of_events(monkeypatch: pytest.MonkeyPatch) -> None:
     _install_api(monkeypatch)
 
     app = AppTest.from_file(str(APP_PATH), default_timeout=30)
+    app.session_state["nav"] = "Events"
     app.run()
 
     assert not app.exception
@@ -129,6 +161,7 @@ def test_incidents_tab_explains_the_missing_migration(
     )
 
     app = AppTest.from_file(str(APP_PATH), default_timeout=30)
+    app.session_state["nav"] = "Incidents"
     app.run()
 
     assert not app.exception
@@ -153,6 +186,7 @@ def test_incidents_tab_maps_every_503_reason(
     _install_api(monkeypatch, incidents=ApiError(code, status_code=503))
 
     app = AppTest.from_file(str(APP_PATH), default_timeout=30)
+    app.session_state["nav"] = "Incidents"
     app.run()
 
     assert not app.exception
@@ -164,6 +198,7 @@ def test_incidents_tab_reports_an_empty_page(monkeypatch: pytest.MonkeyPatch) ->
     _install_api(monkeypatch, incidents=EMPTY_INCIDENTS)
 
     app = AppTest.from_file(str(APP_PATH), default_timeout=30)
+    app.session_state["nav"] = "Incidents"
     app.run()
 
     assert not app.exception
@@ -176,6 +211,7 @@ def test_incidents_tab_renders_rows_and_the_new_evidence_badge(
     _install_api(monkeypatch, incidents={"items": [INCIDENT], "next_cursor": None})
 
     app = AppTest.from_file(str(APP_PATH), default_timeout=30)
+    app.session_state["nav"] = "Incidents"
     app.run()
 
     assert not app.exception
@@ -197,6 +233,7 @@ def test_incident_detail_renders_the_timeline(monkeypatch: pytest.MonkeyPatch) -
     )
 
     app = AppTest.from_file(str(APP_PATH), default_timeout=30)
+    app.session_state["nav"] = "Incidents"
     app.session_state["incident_detail"] = INCIDENT["incident_id"]
     app.run()
 
@@ -207,3 +244,92 @@ def test_incident_detail_renders_the_timeline(monkeypatch: pytest.MonkeyPatch) -
         "2 detection(s), 1 event(s), 0 missing event(s)" in caption.value
         for caption in app.caption
     )
+
+
+def test_event_detail_renders_exactly_the_thirteen_approved_fields(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_api(monkeypatch, event=ROW)
+
+    app = AppTest.from_file(str(APP_PATH), default_timeout=30)
+    app.session_state["nav"] = "Events"
+    app.session_state["events_table"] = {"selection": {"rows": [0]}}
+    app.run()
+
+    assert not app.exception
+    assert "Event detail" in _markdown(app)
+    assert any(
+        "Exactly 13 approved fields" in caption.value for caption in app.caption
+    )
+
+    payload = json.loads(app.json[0].value)
+    assert list(payload) == list(APPROVED_FIELDS)
+    assert not {"raw_event", "metadata", "command", "message", "username"} & set(payload)
+
+
+ML_HEADING = "Machine Learning — Anomaly Detection Monitoring"
+
+EXPECTED_ML_METRICS = {
+    "ML Enabled": "Yes",
+    "Model Loaded": "Yes",
+    "Model Trained": "Yes",
+    "Model Version": "1.2.0",
+    "Detector Version": "1.1.0",
+    "Artifact Format Version": "1",
+    "Sessions Evaluated": "25",
+    "Sessions Scored": "25",
+    "Detections Scored": "100",
+    "Anomalies Found": "3",
+    "Inference Success": "Yes",
+    "Persistence Status": "Reused",
+    "Model Source": "Loaded",
+    "Overall ML Status": "Completed",
+}
+
+
+def test_overview_renders_ml_section_on_initial_load(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """No interaction: the ML section must be in the first rendered page."""
+    _install_api(monkeypatch)
+
+    app = AppTest.from_file(str(APP_PATH), default_timeout=30)
+    app.run()
+
+    assert not app.exception
+    assert not app.error
+    assert ML_HEADING in _markdown(app)
+
+    metrics = {metric.label: metric.value for metric in app.metric}
+    for label, expected in EXPECTED_ML_METRICS.items():
+        assert metrics[label] == expected, label
+
+
+def test_overview_keeps_ml_section_when_ml_status_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _install_api(monkeypatch, ml=ApiError("api_unavailable"))
+
+    app = AppTest.from_file(str(APP_PATH), default_timeout=30)
+    app.run()
+
+    assert not app.exception
+    assert ML_HEADING in _markdown(app)
+    assert any("ML status unavailable" in error.value for error in app.error)
+
+
+def test_overview_keeps_ml_section_when_events_fail(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A dead /events must not remove the independently-sourced ML section."""
+    _install_api(monkeypatch, events=ApiError("api_unavailable"))
+
+    app = AppTest.from_file(str(APP_PATH), default_timeout=30)
+    app.run()
+
+    assert not app.exception
+    assert ML_HEADING in _markdown(app)
+
+    metrics = {metric.label: metric.value for metric in app.metric}
+    assert metrics["Anomalies Found"] == "3"
+    assert any("Cannot reach the API" in error.value for error in app.error)

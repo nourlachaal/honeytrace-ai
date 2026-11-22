@@ -191,6 +191,24 @@ def fetch_incidents(
     return payload
 
 
+def fetch_ml_status(
+    *,
+    base_url: str | None = None,
+    timeout: float = DEFAULT_TIMEOUT_SECONDS,
+) -> dict[str, Any]:
+    """Fetch /ml/status from the API.
+
+    Returns the JSON response dict containing the 14 operational fields.
+    Raises ApiError on any network or HTTP error.
+    """
+    root = (base_url or api_base_url()).rstrip("/")
+    url = f"{root}/ml/status"
+    payload = _get_json(url, timeout=timeout)
+    if not isinstance(payload, dict):
+        raise ApiError("unexpected_response")
+    return payload
+
+
 def fetch_incident(
     incident_id: str,
     *,

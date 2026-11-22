@@ -24,7 +24,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: dashboard
-          image: honeytrace-app:0.4.0
+          image: honeytrace-app:0.5.2
           imagePullPolicy: IfNotPresent
           command:
             - python
@@ -79,7 +79,8 @@ spec:
         - name: tmp
           emptyDir: {}
         - name: streamlit-config
-          emptyDir: {}
+          configMap:
+            name: honeytrace-streamlit-config
 ---
 apiVersion: v1
 kind: Service

@@ -21,7 +21,7 @@ SAFE_EVIDENCE_FIELDS = (
     "http_method", "route", "status_code",
 )
 
-DETECTOR_VERSION = "1.0.0"
+DETECTOR_VERSION = "1.1.0"
 
 @dataclass(frozen=True)
 class Detection:

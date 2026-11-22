@@ -1,6 +1,6 @@
 # Rapport d'évaluation : détection par règles, Isolation Forest et DBSCAN
 
-**Statut : brouillon. Aucun résultat réel n'est encore disponible.**
+**Statut : évaluation réelle effectuée le 20/11/2026 sur 23 sessions labellisées (Cowrie uniquement). Résultats en section 5.2.**
 
 Les chiffres de la section 5 viennent de données synthétiques et ne mesurent aucune performance réelle.
 
@@ -52,7 +52,43 @@ Une métrique à dénominateur nul est notée **n/a** (jamais 0). Les formules s
 
 ### 5.2 Données réelles (scénarios de Person 1)
 
-À COMPLÉTER : nombre de sessions, nombre d'attaques, tableau identique à 5.1, composition des clusters DBSCAN (`cluster_report`).
+**Résultats réels (23 sessions labellisées, toutes évaluées, 0 sans événements).**
+
+23 sessions au total : 12 attaques, 11 normales (TP + FN = 12, FP + TN = 11).
+
+| Méthode | TP | FP | FN | TN | Precision | Recall | F1 | FPR |
+|---|---|---|---|---|---|---|---|---|
+| Règles | 7 | 0 | 5 | 11 | 1,000 | 0,583 | 0,737 | 0,000 |
+| Isolation Forest | 1 | 2 | 11 | 9 | 0,333 | 0,083 | 0,133 | 0,182 |
+
+Rappel : `contamination = 0,1`, graine fixe 42, entraînement et évaluation sur les mêmes 23 sessions (pas de jeu de test séparé).
+
+**Lecture.** Sur ces données, les règles ont une précision parfaite (aucun faux positif) mais ratent 5 attaques (rappel 0,583). Isolation Forest est nettement moins bon : précision 0,333, rappel 0,083, F1 0,133, et 2 faux positifs (FPR 0,182). Les règles restent la meilleure approche sur ce jeu.
+
+**Points à traiter (inchangés) :**
+- faux positifs des règles : aucuns sur ce jeu ;
+- faux négatifs : 5 attaques ratées, à analyser (quelle règle, quelle session) ;
+- sessions signalées par Isolation Forest qui ne sont pas des attaques : une anomalie n'est pas une attaque ;
+- DBSCAN non évalué ici (clustering exploratoire, voir `src/ml/dbscan.py`).
+
+### 5.3 Évaluation avec séparation train/test (hold-out)
+
+Méthode : les sessions sont réparties en train (entraînement de l'Isolation Forest) et test (évaluation), stratifiées par label, avec graine fixe. Les règles ne s'entraînent pas (pas de fuite). L'Isolation Forest nécessite au moins 20 sessions d'entraînement.
+
+| Split (train/test) | Sessions train | Sessions test | Règles (F1) | Isolation Forest (F1) |
+|---|---|---|---|---|
+| 70 / 30 | 16 | 7 | 0,400 | non exécuté (< 20 train) |
+| 87 / 13 | 20 | 3 | 0,667 | 0,000 |
+
+**Conclusion : le jeu de données est trop petit pour une validation hold-out fiable.** Avec 23 sessions, on ne peut pas à la fois entraîner l'Isolation Forest (≥ 20 sessions) et garder un jeu de test assez grand pour des métriques significatives (3 sessions = aucune puissance statistique). Les résultats ci-dessus ne doivent pas être cités comme des performances.
+
+### 5.4 Données nécessaires pour une validation sérieuse
+
+1. **Au moins 100 sessions par classe** (attaques et normales), soit 200+ sessions Cowrie labellisées. Les 23 actuelles ne suffisent pas.
+2. **Un jeu de validation séparé** : entraînement sur un sous-ensemble, validation sur un autre, test sur un troisième. Les seuils (`contamination`, `eps`) ne doivent jamais être ajustés sur le jeu de test.
+3. **Plusieurs graines aléatoires** : reporter la moyenne et l'écart-type, pas un seul run.
+4. **Sessions Juice Shop** : actuellement exclues (pas de `session_id`). Il faut dériver un identifiant de session sûr pour le trafic web, ou accepter que le ML ne couvre que Cowrie.
+5. **Labels équilibrés** : le ratio actuel (12 attaques / 11 normales) est artificiel. Le ratio réel est à mesurer sur du trafic non scénarisé.
 
 ## 6. Analyse
 
@@ -86,4 +122,6 @@ Graines fixes, entrées triées, résultats déterministes.
 
 ## 9. Conclusion
 
-À COMPLÉTER après les résultats réels.
+Sur les 23 sessions labellisées (12 attaques, 11 normales), les règles surpassent Isolation Forest : précision 1,000 contre 0,333, rappel 0,583 contre 0,083, F1 0,737 contre 0,133, et FPR 0,000 contre 0,182. Les règles ne produisent aucun faux positif sur ce jeu, au prix de 5 faux négatifs à analyser.
+
+Ces résultats confirment le choix architectural : le pipeline en production repose sur les règles, qui sont transparentes et testables, et l'apprentissage automatique reste une comparaison hors ligne. Les chiffres reposent sur des données de laboratoire scriptées (22 sessions + 1), avec entraînement et évaluation sur les mêmes sessions : ils sont optimistes et ne se généralisent pas. Un jeu de validation séparé et davantage de sessions labellisées sont nécessaires avant toute intégration.

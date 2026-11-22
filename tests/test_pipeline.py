@@ -17,7 +17,7 @@ def failed(i):
 
 
 def test_run_pipeline_builds_an_incident_from_one_session():
-    detections, incidents = run_pipeline([failed(i) for i in range(5)])
+    detections, incidents, _ml = run_pipeline([failed(i) for i in range(5)])
     assert detections
     assert len(incidents) == 1
     assert incidents[0].session_id == "s1"
