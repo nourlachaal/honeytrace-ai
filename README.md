@@ -1318,12 +1318,6 @@ Cross-source correlation between Cowrie and Juice Shop is not currently implemen
 
 ---
 
-### ML
-
-Machine learning is currently used for offline experimentation/comparison rather than as the primary live detection mechanism.
-
----
-
 ### API exposure
 
 The API deliberately exposes only a restricted set of fields.
