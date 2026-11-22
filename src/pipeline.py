@@ -392,6 +392,7 @@ def _attach_ml_scores(events: list, detections: list) -> tuple:
             "sessions_evaluated": status["eligible_sessions"],
             "sessions_scored": status["sessions_scored"],
             "anomalies_found": status["anomalies_found"],
+            "detections_scored": status.get("detections_scored", 0),
             "model_version": status.get("model_version") or MODEL_VERSION,
             "model_source": status.get("model_source", "unknown"),
             "persistence_status": status.get("persistence_status", "not_applicable"),

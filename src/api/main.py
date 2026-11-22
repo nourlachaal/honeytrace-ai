@@ -167,6 +167,7 @@ async def ml_status() -> dict[str, Any]:
                     "sessions_evaluated",
                     "sessions_scored",
                     "anomalies_found",
+                    "detections_scored",
                     "model_version",
                     "model_source",
                     "persistence_status",
@@ -189,6 +190,7 @@ async def ml_status() -> dict[str, Any]:
             result["sessions_evaluated"] = bridge_metrics.get("sessions_evaluated")
             result["sessions_scored"] = bridge_metrics.get("sessions_scored")
             result["anomalies_found"] = bridge_metrics.get("anomalies_found")
+            result["detections_scored"] = bridge_metrics.get("detections_scored")
             result["model_source"] = bridge_metrics.get("model_source") or "loaded"
             result["persistence_status"] = bridge_metrics.get("persistence_status")
             result["last_inference_at"] = bridge_metrics.get("last_inference_at")
@@ -213,13 +215,10 @@ async def ml_status() -> dict[str, Any]:
                 pass  # Keep None; will be set below
         if result["events_total"] > 0:
             # events_total is the total event count from the database.
-            # detections_scored: bridge value if available; otherwise None.
-            # Never equate events_total with detections_scored.
+            # detections_scored comes only from the pipeline bridge; never
+            # equate it with events_total.
             if result.get("detections_scored") is None:
                 result["detections_scored"] = None
-            # If bridge set detections_scored, respect it.
-            elif result.get("detections_scored") == 0:
-                pass  # Preserve explicit bridge value
         # Model source: bridge value if available.
         if bridge_metrics is not None and bridge_metrics.get("model_source"):
             result["model_source"] = bridge_metrics["model_source"]
